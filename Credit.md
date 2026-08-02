@@ -144,9 +144,31 @@ Every entry must contain:
   and are not claimed as LAMF results. Any future retrieval adaptation requires
   independent evaluation and a new ledger update.
 
+### OPT-OH-MY-PI — oh-my-pi Hashline
+
+- **Upstream:** [can1357/oh-my-pi](https://github.com/can1357/oh-my-pi),
+  specifically the `@oh-my-pi/hashline` component.
+- **Creator or maintainer:** Can Boluk; the root license also credits Mario
+  Zechner.
+- **License observed:** MIT in the root license and Hashline package metadata.
+- **Snapshot inspected:** `06343fef4200c4e32d18f08df5a6a8bd84dcc710`
+  on 2026-08-02.
+- **What influenced LAMF:** content-hash mutation preconditions, stale-anchor
+  rejection before mutation, narrow recovery from current state, and preflight
+  of multi-target edits before any part lands.
+- **LAMF surfaces:** optional `stale-context-guards`; the optimization discovery
+  process and its first report.
+- **Incorporation:** conceptual synthesis with a generic optimistic-concurrency
+  fallback for harnesses without hash-anchored editing.
+- **Copied source:** no Hashline source, prompt text, grammar, or patch format is
+  vendored. LAMF uses original provider-neutral wording.
+- **Notes:** upstream token and edit-success measurements are not claimed as
+  LAMF results. LAMF's optional module requires independent validation.
+
 ## Maintenance record
 
 | Date | Change | Updated by |
 |---|---|---|
 | 2026-08-02 | Created the living ledger and recorded all repositories evaluated for LAMF Optimizations. | Codex, at the project maintainer's request |
 | 2026-08-02 | Re-checked upstream licenses before the first public distribution. Confirmed Ponytail, Matt Pocock Skills, Gas Town, and Ruflo as MIT; Mem0 as Apache-2.0; the Karpathy-derived repository still has no root license; corrected Multica from Apache-2.0 to its current restricted Multica License. No upstream code or prose is vendored. | Codex |
+| 2026-08-02 | Added `OPT-OH-MY-PI`, re-confirmed the upstream MIT license, and separated optimization modules from the core public distribution. | Codex |

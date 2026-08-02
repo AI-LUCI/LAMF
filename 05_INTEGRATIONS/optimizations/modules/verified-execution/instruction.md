@@ -1,1 +1,0 @@
-Make success verifiable: translate the request into concrete observable criteria, choose checks proportional to risk, and continue until those checks pass or a real blocker is established. Diagnose before fixing, distinguish evidence from inference, and report what was and was not verified.

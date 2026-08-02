@@ -6,11 +6,13 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 RUNTIME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RUNTIME))
 
 from lamf.harness import HARNESS_IDS, HARNESSES, apply_grok, apply_hermes, render, server_spec, validate_all  # noqa: E402
+from lamf import mcp_server, optimizations  # noqa: E402
 
 
 def main() -> int:
@@ -25,6 +27,18 @@ def main() -> int:
         if HARNESSES[hid].format == "json":
             json.loads(text)
         print(f"PASS {hid}: shared MCP launcher + shared authority")
+    with tempfile.TemporaryDirectory() as td:
+        optimization_data = Path(td) / "data"
+        optimizations.initialize(optimization_data)
+        instructions = mcp_server.server_instructions(
+            SimpleNamespace(data_dir=str(optimization_data)))
+        if optimizations.discover():
+            assert "stale context" in instructions
+            assert "independently switchable" in instructions
+            print("PASS optimization delivery: optional modules reach MCP instructions")
+        else:
+            assert "independently switchable" not in instructions
+            print("PASS optimization delivery: core emits no optional instructions")
     import yaml
     with tempfile.TemporaryDirectory() as td:
         config = Path(td) / "config.yaml"

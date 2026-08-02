@@ -45,8 +45,20 @@ For repeatable deployment examples and verification commands, see [INSTALL.md](I
 - `02_SECURITY/profiles/` — fixed security profiles
 - `03_CONTRACTS/golden-vectors.json` — canonical-hashing validation fixture
 - `04_STORAGE/SCHEMA.sql` — authoritative SQLite schema
-- `05_INTEGRATIONS/` — OpenClaw and optional optimization modules
+- `05_INTEGRATIONS/` — native OpenClaw integration
 - `Credit.md` — living external-attribution and provenance ledger
+
+## Optional agent optimizations
+
+LAMF's memory authority works without agent-behavior optimizations. The
+independently switchable optimization modules are distributed separately so
+evaluators can choose the smallest deployment surface:
+
+- [Download LAMF Optimizations](https://github.com/AI-LUCI/LAMF-Optimizations)
+
+Install the pack into this checkout, rerun LAMF, and use
+`lamf optimizations status` to inspect its modules. Removing the pack returns
+LAMF to its unoptimized core behavior without affecting durable memory.
 
 ## Security boundary
 
@@ -56,4 +68,4 @@ LAMF listens on localhost by default. Do not expose its service port to a networ
 
 ## License and attribution
 
-LAMF is released under the [MIT License](LICENSE). External influences and license-review status are recorded in [Credit.md](Credit.md). Re-check upstream licenses before redistributing modified integrations or optimization modules.
+LAMF is released under the [MIT License](LICENSE). External influences and license-review status are recorded in [Credit.md](Credit.md). The optional pack maintains module-level provenance in its own living ledger.

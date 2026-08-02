@@ -1,4 +1,0 @@
-interface:
-  display_name: "Surgical Changes"
-  short_description: "Keep changes tightly scoped"
-  default_prompt: "Make only changes directly required by the task."

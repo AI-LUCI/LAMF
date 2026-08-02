@@ -79,6 +79,29 @@ On macOS or Linux:
 
 The local web workspace is served at `http://127.0.0.1:8734` when the service is running. Use the operator access token created during setup; do not confuse it with the protected instance identity key, and do not commit or print either credential.
 
+## 7. Optional agent optimizations
+
+The core installation is complete without optimization modules. To add the
+independently switchable behavior pack, download
+[LAMF Optimizations](https://github.com/AI-LUCI/LAMF-Optimizations) and run its
+installer against this source checkout.
+
+Windows example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "E:\LAMF-Optimizations\Install-LAMF-Optimizations.ps1" -LamfRoot "E:\LAMF"
+```
+
+macOS or Linux example:
+
+```bash
+bash /path/to/LAMF-Optimizations/install-lamf-optimizations.sh /path/to/LAMF
+```
+
+The pack changes no durable memory. Its modules can be controlled with
+`lamf optimizations status`, `lamf optimizations on`, `lamf optimizations off`,
+and the per-module `enable` or `disable` commands.
+
 ## Installer options
 
 Run the following for the current option list:
@@ -88,4 +111,3 @@ python installer/install.py --help
 ```
 
 The installer is idempotent and can be rerun to repair or update an installation. The `--reset` option erases the selected LAMF data directory and therefore requires explicit confirmation.
-

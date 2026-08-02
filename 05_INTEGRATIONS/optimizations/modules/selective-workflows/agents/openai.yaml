@@ -1,4 +1,0 @@
-interface:
-  display_name: "Selective Workflows"
-  short_description: "Load detailed workflows only when needed"
-  default_prompt: "Select the smallest relevant workflow for this task."
