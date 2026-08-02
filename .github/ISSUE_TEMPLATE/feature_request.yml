@@ -1,0 +1,16 @@
+name: Feature request
+description: Propose a scoped improvement
+title: "[Feature]: "
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem, description: What user problem should be solved?}
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes: {label: Proposed behavior, description: Include security and compatibility implications.}
+    validations: {required: true}
+  - type: textarea
+    id: alternatives
+    attributes: {label: Alternatives considered}

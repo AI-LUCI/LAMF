@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible LAMF defect using synthetic data
+title: "[Bug]: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include databases, tokens, keys, logs, vaults, exports, or personal data. Security vulnerabilities belong in private reporting."
+  - type: input
+    id: version
+    attributes: {label: LAMF version, placeholder: "2.0.0"}
+    validations: {required: true}
+  - type: dropdown
+    id: os
+    attributes: {label: Operating system, options: [Windows, macOS, Linux, Other]}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes: {label: Synthetic reproduction, description: Include exact commands and sanitized output.}
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes: {label: Expected and actual behavior}
+    validations: {required: true}
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, private data, and live LAMF state.
+          required: true
+        - label: This is not a private security report.
+          required: true

@@ -38,6 +38,8 @@ The interactive installer creates the private LAMF authority outside this Git ch
 
 For repeatable deployment examples and verification commands, see [INSTALL.md](INSTALL.md).
 
+For a synthetic cross-agent walkthrough, see [the reproducible demo](docs/DEMO.md). Architecture, threat boundaries, and troubleshooting are documented separately so evaluators can review limitations before using important data.
+
 ## What is included
 
 - `installer/` — cross-platform installer and uninstall helpers
@@ -69,3 +71,7 @@ LAMF listens on localhost by default. Do not expose its service port to a networ
 ## License and attribution
 
 LAMF is released under the [MIT License](LICENSE). External influences and license-review status are recorded in [Credit.md](Credit.md). The optional pack maintains module-level provenance in its own living ledger.
+
+## Community
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, use [private vulnerability reporting](SECURITY.md) for security concerns, and follow the [code of conduct](CODE_OF_CONDUCT.md). Public launch material remains a draft until maintainer approval.

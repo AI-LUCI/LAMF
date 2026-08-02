@@ -172,3 +172,4 @@ Every entry must contain:
 | 2026-08-02 | Created the living ledger and recorded all repositories evaluated for LAMF Optimizations. | Codex, at the project maintainer's request |
 | 2026-08-02 | Re-checked upstream licenses before the first public distribution. Confirmed Ponytail, Matt Pocock Skills, Gas Town, and Ruflo as MIT; Mem0 as Apache-2.0; the Karpathy-derived repository still has no root license; corrected Multica from Apache-2.0 to its current restricted Multica License. No upstream code or prose is vendored. | Codex |
 | 2026-08-02 | Added `OPT-OH-MY-PI`, re-confirmed the upstream MIT license, and separated optimization modules from the core public distribution. | Codex |
+| 2026-08-02 | Re-checked current upstream repository license metadata for the public-launch gate; existing license caveats remain in force and no external material was newly incorporated. | Codex |
