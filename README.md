@@ -36,7 +36,7 @@ bash ./installer/install.sh
 
 The interactive installer creates the private LAMF authority outside this Git checkout, initializes the selected security profile, optionally configures agent harnesses, and can start the local service. Non-interactive installation defaults to the `controlled` profile, no Obsidian projection, and no agent harness.
 
-For repeatable deployment examples and verification commands, see [INSTALL.md](INSTALL.md).
+For repeatable deployment examples, installation options, and release checksum verification (PowerShell and POSIX), see [INSTALL.md](INSTALL.md).
 
 For a synthetic cross-agent walkthrough, see [the reproducible demo](docs/DEMO.md). Architecture, threat boundaries, and troubleshooting are documented separately so evaluators can review limitations before using important data.
 
