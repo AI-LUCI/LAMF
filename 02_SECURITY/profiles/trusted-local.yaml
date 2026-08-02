@@ -1,0 +1,75 @@
+# LAMF security policy — profile: trusted-local
+# Cell values pinned by DECISIONS.md §I. Floor constants (F1–F12) are identical
+# across all four fixed profiles; see SECURITY_PROFILE_OVERVIEW.md for semantics.
+# NOTE: "off" is quoted so YAML 1.1 parsers keep it as a string.
+profile: trusted-local
+version: 1
+actor_auth: required
+network:
+  bind: loopback
+  lan:
+    enabled: false
+    tls: true
+    auth: required
+secrets:
+  pre_sanitization: required
+  value_detection: required
+  excluded_sources:
+    - ".env"
+    - ".env.*"
+    - "*.pem"
+    - "*.key"
+    - "*.p12"
+    - "*.pfx"
+    - "id_rsa*"
+    - "id_ed25519*"
+    - "id_ecdsa*"
+    - "id_dsa*"
+    - ".aws/credentials"
+    - ".netrc"
+    - ".kube/config"
+    - "kubeconfig"
+    - "browser_credential_stores"
+    - "os_keychain"
+capture:
+  ordinary: automatic
+  sensitive: protected_automatic
+  full_prompt: sanitized
+  llm_transcript: "off"
+  bounds:
+    message_max_kib: 32
+    tool_excerpt_max_kib: 8
+promotion:
+  auto_durable_facts: yes_except_protected
+  external_content: never_auto
+model_self_approval: false
+context:
+  automatic: shared_bounded
+  capsule_max_tokens: 1200
+sharing:
+  cross_agent_read: registered_local
+  cross_channel_merge: suggest_confirm
+receipts:
+  read: sensitive_itemized
+deletion:
+  approval: protected_items
+  erasure: crypto_shredding
+encryption:
+  at_rest: sensitivity_driven
+  export: required
+remote_sync: explicit
+git:
+  mode: "off"
+  sensitive_classes: excluded
+quarantine:
+  ttl_days: 30
+approvals:
+  ttl_hours: 72
+  rate_limit_per_actor_per_hour: 60
+policy_changes:
+  diff_display: required
+  downgrade_cooldown_hours: 24
+  step_up_auth: required
+council:
+  max_seats_per_actor: 1
+  quorum: majority

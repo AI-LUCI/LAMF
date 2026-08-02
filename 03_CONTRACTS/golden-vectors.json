@@ -1,0 +1,91 @@
+{
+  "vectors": [
+    {
+      "name": "ascii-object",
+      "input": {
+        "hello": "world",
+        "answer": 42,
+        "ok": true,
+        "nothing": null
+      },
+      "canonical": "{\"answer\":42,\"hello\":\"world\",\"nothing\":null,\"ok\":true}",
+      "sha256": "0e33fe1c4c5bb3be47b79cccc32d304e882f7cde9dab923b9b54fd610e148e77"
+    },
+    {
+      "name": "nested-object-array",
+      "input": {
+        "outer": {
+          "list": [
+            1,
+            2,
+            [
+              3,
+              {
+                "deep": "value"
+              }
+            ],
+            "x"
+          ],
+          "empty_obj": {},
+          "empty_arr": []
+        }
+      },
+      "canonical": "{\"outer\":{\"empty_arr\":[],\"empty_obj\":{},\"list\":[1,2,[3,{\"deep\":\"value\"}],\"x\"]}}",
+      "sha256": "d0f046e49ebf02fd848490bf932014d4438e38ad4c7838704431f821148ab5f3"
+    },
+    {
+      "name": "non-ascii-nfc",
+      "input": {
+        "café": "Esprésso é bom",
+        "decomposed": "é"
+      },
+      "canonical": "{\"café\":\"Esprésso é bom\",\"decomposed\":\"é\"}",
+      "sha256": "03757d2b7bea3082d046eff9e6ec63f444f46d5d5ee3828cb4670c610b07ad5b"
+    },
+    {
+      "name": "key-sorting-proof",
+      "input": {
+        "zeta": 1,
+        "Alpha": 2,
+        "beta": 3,
+        "10": 4,
+        "_under": 5,
+        "Zulu": 6
+      },
+      "canonical": "{\"10\":4,\"Alpha\":2,\"Zulu\":6,\"_under\":5,\"beta\":3,\"zeta\":1}",
+      "sha256": "9a24a49b37b4ebe5067ee35892af2f49e30ad9babe41ee8e245daf3978e6ecdd"
+    },
+    {
+      "name": "control-char-escaping",
+      "input": {
+        "ctrl": "a\u0000b\u0007c\u000bd\u001fe",
+        "named": "q\"b\\bs\ffs\nl\rin\tt",
+        "solidus": "a/b"
+      },
+      "canonical": "{\"ctrl\":\"a\\u0000b\\u0007c\\u000bd\\u001fe\",\"named\":\"q\\\"b\\\\bs\\ffs\\nl\\rin\\tt\",\"solidus\":\"a/b\"}",
+      "sha256": "ead72df6a7ef118b1989ba7bc2707ca3d811c668c5ec1a58ba0cbaa53f31a399"
+    },
+    {
+      "name": "lamf-event-genesis",
+      "input": {
+        "id": "018f3c4a-9b2e-7c1d-8a5f-2e6d4c8b1a09",
+        "seq": 1,
+        "ts": 1735689600000,
+        "actor": "act_01HF6ZK4QW7EXAMPLE0000000A",
+        "session": "ses_01HF6ZK4QW7EXAMPLE0000000B",
+        "type": "message",
+        "scope": "user:ada",
+        "sensitivity": "ordinary",
+        "taint": "user_direct",
+        "payload": {
+          "role": "user",
+          "text": "Remember that I prefer morning meetings."
+        },
+        "payload_sha256": "c51086efd2178ac63c221a7b3a3c6b4d0eddabe3b2cf129438bb74ff43225d0d",
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical": "{\"actor\":\"act_01HF6ZK4QW7EXAMPLE0000000A\",\"id\":\"018f3c4a-9b2e-7c1d-8a5f-2e6d4c8b1a09\",\"payload\":{\"role\":\"user\",\"text\":\"Remember that I prefer morning meetings.\"},\"payload_sha256\":\"c51086efd2178ac63c221a7b3a3c6b4d0eddabe3b2cf129438bb74ff43225d0d\",\"prev_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"scope\":\"user:ada\",\"sensitivity\":\"ordinary\",\"seq\":1,\"session\":\"ses_01HF6ZK4QW7EXAMPLE0000000B\",\"taint\":\"user_direct\",\"ts\":1735689600000,\"type\":\"message\"}",
+      "sha256": "343aa05fabc07d730e648a73d1a008727a85797826e4ce6603e0b845c7e6fab2"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "lamf-memory",
+  "version": "2.0.0",
+  "private": true,
+  "description": "LAMF (Ledgered Agent Memory Fabric) native OpenClaw memory plugin (kind: memory). No external npm dependencies — Node >= 24 fetch and node:* builtins only.",
+  "type": "module",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node --check index.ts"
+  },
+  "comment": "OpenClaw loads this plugin's TypeScript entry directly (plugins.load.paths -> <this dir>/index.ts; see DECISIONS.md §W-03). The openclaw/plugin-sdk is provided by the OpenClaw host at runtime, so it is intentionally NOT an npm dependency. TODO-BIND: if the installed OpenClaw version requires a bundled/transpiled entry, add the build step documented by that SDK — do not invent one.",
+  "license": "MIT"
+}

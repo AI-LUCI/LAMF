@@ -1,0 +1,49 @@
+# LAMF authority and user data (never publish)
+data/
+vault/
+LAMF Vault/
+operator.token
+*.token
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.lamf
+secrets/
+keys/
+spool/
+quarantine/
+logs/
+
+# Local environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+node_modules/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/05_INTEGRATIONS/optimizations/overlay/*.exe
+
+# Local validation artifacts
+.test-runs/
+lamf-smoke-*/
+coverage/
+.coverage
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*

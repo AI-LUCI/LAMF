@@ -1,0 +1,10 @@
+* text=auto
+
+*.sh text eol=lf
+*.command text eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.exe binary

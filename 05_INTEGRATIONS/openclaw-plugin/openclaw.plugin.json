@@ -1,0 +1,51 @@
+{
+  "id": "lamf-memory",
+  "name": "LAMF Memory",
+  "version": "2.0.0",
+  "description": "LAMF (Ledgered Agent Memory Fabric) native memory capability for OpenClaw: governed, event-sourced, local-first agent memory with taint-badged context injection.",
+  "kind": "memory",
+  "activation": {
+    "onStartup": false
+  },
+  "contracts": {
+    "tools": [
+      "memory_search",
+      "memory_remember",
+      "memory_context",
+      "memory_handoff"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "lamfUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:8734",
+        "description": "Base URL of the local LAMF server (loopback)."
+      },
+      "tokenFile": {
+        "type": "string",
+        "default": "~/LAMF/operator.token",
+        "description": "Path to the LAMF bearer token file written by the installer (`lamf init`)."
+      },
+      "captureEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Capture final-turn messages into LAMF on agent_end."
+      },
+      "injectContext": {
+        "type": "boolean",
+        "default": true,
+        "description": "Inject the LAMF orientation capsule before prompt assembly."
+      },
+      "maxContextTokens": {
+        "type": "integer",
+        "minimum": 64,
+        "maximum": 4000,
+        "default": 2000,
+        "description": "Token budget requested for injected context; hard-clamped server-side to the active policy's context.capsule_max_tokens."
+      }
+    }
+  }
+}
