@@ -79,7 +79,57 @@ On macOS or Linux:
 
 The local web workspace is served at `http://127.0.0.1:8734` when the service is running. Use the operator access token created during setup; do not confuse it with the protected instance identity key, and do not commit or print either credential.
 
-## 7. Optional agent optimizations
+## 7. Verify a GitHub Release download
+
+Release archives are published with a companion `SHA256SUMS.txt`. Comparing hashes confirms the ZIP you downloaded matches the published bytes (integrity / accidental corruption). It does **not** prove publisher authenticity the way code signing or a signature over the checksum file would; treat checksum verification and code signing as separate controls.
+
+Published core assets for `v2.0.0` use these names (adjust the version when a newer release is current):
+
+- `LAMF-2.0.0.zip`
+- `SHA256SUMS.txt`
+
+Optional optimizations are listed in the same sums file as `LAMF-Optimizations-1.0.0.zip` and ship from the separate [LAMF-Optimizations](https://github.com/AI-LUCI/LAMF-Optimizations) repository.
+
+Download both the ZIP and `SHA256SUMS.txt` from the [GitHub Releases](https://github.com/AI-LUCI/LAMF/releases) page into the same directory, then verify with the built-in tools below (no third-party checksum utilities required).
+
+### PowerShell
+
+```powershell
+# In the directory that contains LAMF-2.0.0.zip and SHA256SUMS.txt
+Get-FileHash .\LAMF-2.0.0.zip -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
+```
+
+Confirm the hex digest from `Get-FileHash` matches the line for `LAMF-2.0.0.zip` in `SHA256SUMS.txt` (comparison is case-insensitive). To automate the check:
+
+```powershell
+$expected = (Get-Content .\SHA256SUMS.txt |
+  Where-Object { $_ -match '\sLAMF-2\.0\.0\.zip$' } |
+  ForEach-Object { ($_ -split '\s+', 2)[0] }).ToLowerInvariant()
+$actual = (Get-FileHash .\LAMF-2.0.0.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Checksum mismatch for LAMF-2.0.0.zip" }
+"OK: LAMF-2.0.0.zip matches SHA256SUMS.txt"
+```
+
+### POSIX (macOS / Linux)
+
+GNU `sha256sum` can check the sums file directly when the ZIP sits beside it:
+
+```bash
+# In the directory that contains LAMF-2.0.0.zip and SHA256SUMS.txt
+sha256sum -c --ignore-missing SHA256SUMS.txt
+```
+
+`--ignore-missing` skips other names listed in the file (for example `LAMF-Optimizations-1.0.0.zip`) when those archives are not present. On macOS without GNU coreutils, compare manually with `shasum`:
+
+```bash
+grep ' LAMF-2.0.0.zip$' SHA256SUMS.txt
+shasum -a 256 LAMF-2.0.0.zip
+```
+
+The two digests must match. A matching checksum only means the file contents match the published hash list; it is not a substitute for verifying a release signature or publisher identity.
+
+## 8. Optional agent optimizations
 
 The core installation is complete without optimization modules. To add the
 independently switchable behavior pack, download
