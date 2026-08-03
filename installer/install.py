@@ -224,6 +224,36 @@ def expand(p: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(p))).resolve()
 
 
+def git_checkout_root(path: Path) -> Path | None:
+    """Return the enclosing Git checkout without invoking Git.
+
+    A checkout root has either a ``.git`` directory (a regular clone) or a
+    ``.git`` file (a linked worktree).  Resolving first also covers selected
+    data directories that do not exist yet and prevents a symlinked path from
+    bypassing the ancestor check.
+    """
+    resolved = path.expanduser().resolve()
+    for candidate in (resolved, *resolved.parents):
+        marker = candidate / ".git"
+        if marker.is_dir() or marker.is_file():
+            return candidate
+    return None
+
+
+def validate_data_dir_location(ui: UI, data_dir: Path) -> bool:
+    """Reject private authority data inside any Git checkout."""
+    if git_checkout_root(data_dir) is None:
+        return True
+    ui.fail(
+        "The selected LAMF data directory is inside a Git checkout.",
+        fix=(
+            "Choose a separate private directory outside every Git checkout "
+            "(for example, ~/LAMF), then run the installer again."
+        ),
+    )
+    return False
+
+
 def is_tty() -> bool:
     return sys.stdin.isatty()
 
@@ -1125,6 +1155,10 @@ def main(argv: list[str]) -> int:
         vault = expand(args.vault) if args.vault else (reg_vault or expand(DEFAULT_VAULT))
     else:
         vault = None
+    # Refuse before creating a venv, authority files, tokens, vaults, or helper
+    # scripts.  The diagnostic intentionally does not echo the selected path.
+    if not validate_data_dir_location(ui, data_dir):
+        return 2
     # Make the resolved data dir visible to path helpers (venv fallback, doctor)
     os.environ["LAMF_DATA_DIR"] = str(data_dir)
 
