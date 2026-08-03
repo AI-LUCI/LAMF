@@ -21,3 +21,4 @@ jobs:
       - run: python runtime/tests/smoke_test.py
       - run: python runtime/tests/harness_test.py
       - run: python runtime/tests/installer_scope_test.py
+      - run: python runtime/tests/web_accessibility_test.py
