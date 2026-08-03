@@ -9,3 +9,20 @@
 - **Port 8734 is busy:** stop the conflicting local service or configure a reviewed alternative; do not expose LAMF publicly as a shortcut.
 
 Bug reports must contain sanitized, synthetic reproductions only.
+
+## Privacy-safe issue report
+
+Generate a small allowlist-only report from the repository root:
+
+```bash
+python installer/collect_issue_report.py --profile controlled --mode core --harness codex
+```
+
+Select only the public flags that describe the affected setup. The JSON report
+contains the LAMF version, bounded platform and Python facts, those explicit
+flags, and boolean dependency/layout checks. The helper does not accept or read
+a LAMF data directory and does not enumerate environment variables or files.
+It therefore excludes databases, payloads, tokens, keys, logs, vaults, exports,
+absolute personal paths, and memory content by construction. Inspect the short
+JSON output before attaching it to an issue. Use only synthetic text when
+describing the steps that caused the problem.
