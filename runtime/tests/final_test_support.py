@@ -45,6 +45,7 @@ class McpClient:
         assert "beginning of every new task" in instructions
         assert "memory_orientation" in instructions
         assert "memory_search" in instructions
+        self.instructions = instructions
         self.notify("notifications/initialized", {})
 
     def _send(self, message: dict):
