@@ -1,0 +1,25 @@
+// LAMF x OpenClaw integration.
+// Editable source of openclaw_integration.svg. Re-render: dot -Tsvg openclaw_integration.dot > openclaw_integration.svg
+// Normative text: 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md (hook table, agent
+// mapping, install contract). Capture is nonblocking; sanitize is server-side,
+// fail-closed, before spool (01_ARCHITECTURE/SYSTEM_OVERVIEW.md section 2).
+digraph G {
+  rankdir=TB;
+  node [shape=box, style=rounded, fontname="Arial"];
+
+  channels [label="OpenClaw channels / bindings"];
+  agents   [label="OpenClaw agents\nseparate agentId + session stores"];
+  plugin   [label="LAMF native memory plugin"];
+  hooks    [label="Typed hooks\nmessage, prompt, tools, agent end"];
+  mcp      [label="LAMF MCP/HTTP client"];
+  server   [label="LAMF local server"];
+  store    [label="LAMF local data directory"];
+
+  channels -> agents;
+  agents -> plugin;
+  plugin -> hooks;
+  plugin -> mcp;
+  hooks -> server [label="Nonblocking capture + policy"];
+  mcp -> server   [label="Search / context / remember / handoff"];
+  server -> store;
+}

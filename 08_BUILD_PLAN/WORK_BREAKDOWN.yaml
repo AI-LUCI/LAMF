@@ -1,0 +1,487 @@
+# LAMF work breakdown — per phase 0-11.
+# Each task maps to contract files it implements (paths per DECISIONS section A)
+# and the acceptance tests it enables (08_BUILD_PLAN/ACCEPTANCE_TESTS.md).
+
+phase_0:
+  title: Contract freeze
+  tasks:
+    - id: P0-T1
+      title: Freeze contracts; validate package; open decision log
+      contracts:
+        - DECISIONS.md
+        - tools/validate_package.py
+        - 08_BUILD_PLAN/OPEN_DECISIONS.template.md
+      tests:
+        - T-canonical-hash-parity  # Python leg runs here via validate_package.py
+      depends_on: []
+
+phase_1:
+  title: Core event and storage engine
+  tasks:
+    - id: P1-T1
+      title: LAMF-CANON-1 canonicalization + hashing (Rust)
+      contracts:
+        - 03_CONTRACTS/canonical-hashing.md
+        - 03_CONTRACTS/golden-vectors.json
+      tests:
+        - T-canonical-hash-parity
+        - T-duplicate-key-rejected
+      depends_on: [P0-T1]
+    - id: P1-T2
+      title: Event model, chain, Ed25519 signing, append-only JSONL segments
+      contracts:
+        - 03_CONTRACTS/schemas/event.schema.json
+        - 01_ARCHITECTURE/SYSTEM_OVERVIEW.md
+      tests:
+        - T-events-append-only
+        - T-crash-replay-idempotent
+      depends_on: [P1-T1]
+    - id: P1-T3
+      title: SQLite state DB, single-writer WAL + read pool, schema migrations
+      contracts:
+        - 04_STORAGE/SCHEMA.sql
+      tests:
+        - T-crash-replay-idempotent
+      depends_on: [P0-T1]
+    - id: P1-T4
+      title: Payload store (content-addressed) + event payload_ref
+      contracts:
+        - 01_ARCHITECTURE/SYSTEM_OVERVIEW.md
+        - 03_CONTRACTS/schemas/event.schema.json
+      tests:
+        - T-events-append-only
+      depends_on: [P1-T2]
+    - id: P1-T5
+      title: Bounded spool + fail-closed sanitizer (capture pipeline)
+      contracts:
+        - 03_CONTRACTS/spool-format.md
+        - 02_SECURITY/SECRET_PATTERNS.md
+        - 01_ARCHITECTURE/SYSTEM_OVERVIEW.md
+      tests:
+        - T-secret-fixtures
+        - T-capture-ack-p95
+        - T-registered-secret-value
+      depends_on: [P1-T2]
+    - id: P1-T6
+      title: Sealed checkpoints + bounded-tail startup verification + replay engine
+      contracts:
+        - 01_ARCHITECTURE/SYSTEM_OVERVIEW.md
+        - 03_CONTRACTS/state-machines.md
+      tests:
+        - T-startup-scan-budget
+        - T-crash-replay-idempotent
+        - T-chain-splice-rejected
+      depends_on: [P1-T2, P1-T3]
+
+phase_2:
+  title: Policy engine and five setup choices
+  tasks:
+    - id: P2-T1
+      title: Policy schema validator + invariant floor enforcement
+      contracts:
+        - 03_CONTRACTS/schemas/security-policy.schema.json
+        - 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md
+      tests:
+        - T-floor-enforced
+        - T-model-self-approval-rejected
+        - T-approval-rate-limit
+      depends_on: [P0-T1]
+    - id: P2-T2
+      title: Four fixed profiles + five-choice setup UX
+      contracts:
+        - 02_SECURITY/profiles/locked.yaml
+        - 02_SECURITY/profiles/controlled.yaml
+        - 02_SECURITY/profiles/trusted-local.yaml
+        - 02_SECURITY/profiles/open-local.yaml
+        - 02_SECURITY/FEATURE_MATRIX.md
+      tests:
+        - T-five-profiles-shown
+        - T-profile-locked
+        - T-profile-controlled
+        - T-profile-trusted-local
+        - T-profile-open-local
+      depends_on: [P2-T1]
+    - id: P2-T3
+      title: Actor pairing, auth ladder L0/L1/L2, anti-rebinding
+      contracts:
+        - 03_CONTRACTS/wire-protocol.md
+        - 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md
+      tests:
+        - T-identity-fail-closed
+        - T-prompt-cannot-escalate
+        - T-pairing-ceremony-lockout
+        - T-step-up-receipt
+        - T-dns-rebinding-rejected
+      depends_on: [P1-T3]
+    - id: P2-T4
+      title: Approval queue (TTL, deny-on-timeout, rate limit) + receipts
+      contracts:
+        - 03_CONTRACTS/state-machines.md
+        - 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md
+      tests:
+        - T-approval-ttl-deny
+        - T-receipts-minimum
+        - T-approval-receipts
+        - T-approval-rate-limit
+      depends_on: [P2-T1]
+    - id: P2-T5
+      title: Policy diff, step-up confirmation, cooldown, versioned events
+      contracts:
+        - 03_CONTRACTS/schemas/security-policy.schema.json
+        - 03_CONTRACTS/CLI_REFERENCE.md
+      tests:
+        - T-policy-diff-versioned
+      depends_on: [P2-T1, P1-T2]
+    - id: P2-T6
+      title: AI-Custom generation + application flow
+      contracts:
+        - 06_SETUP/AI_CUSTOM_QUESTIONNAIRE.md
+        - 06_SETUP/AI_CUSTOM_PROFILE_GENERATOR.md
+      tests:
+        - T-profile-ai-custom
+      depends_on: [P2-T1, P2-T5]
+
+phase_3:
+  title: Memory record lifecycle
+  tasks:
+    - id: P3-T1
+      title: Record types, revisions, supersession, contradiction (review queue), expiry
+      contracts:
+        - 03_CONTRACTS/schemas/memory-record.schema.json
+        - 03_CONTRACTS/state-machines.md
+      tests:
+        - T-supersession-authority
+        - T-record-lifecycle
+        - T-expiry-keeps-evidence
+      depends_on: [P1-T2, P2-T1]
+    - id: P3-T2
+      title: Per-record data keys, tombstones, crypto-shredding erasure
+      contracts:
+        - 01_ARCHITECTURE/SYSTEM_OVERVIEW.md
+        - 03_CONTRACTS/state-machines.md
+      tests:
+        - T-deletion-crypto-shredding
+        - T-erasure-checklist
+        - T-fts-purge-on-tombstone
+        - T-sensitivity-payload-ref
+      depends_on: [P3-T1]
+    - id: P3-T3
+      title: Quarantine lifecycle (encrypted, excluded, TTL)
+      contracts:
+        - 03_CONTRACTS/state-machines.md
+      tests:
+        - T-quarantine-lifecycle
+        - T-quarantine-search-exclusion
+        - T-quarantine-key-shredded
+      depends_on: [P3-T1]
+    - id: P3-T4
+      title: Content-hash manifests; no rechunk/re-embed of unchanged records
+      contracts:
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+      tests:
+        - T-no-rechunk
+      depends_on: [P3-T1]
+    - id: P3-T5
+      title: Provenance inheritance — write-time taint/sensitivity computation
+      contracts:
+        - 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md
+        - 03_CONTRACTS/state-machines.md
+        - 03_CONTRACTS/mcp-tools.yaml
+      tests:
+        - T-taint-inheritance
+        - T-remember-laundering-blocked
+      depends_on: [P3-T1, P2-T1]
+
+phase_4:
+  title: Fast deterministic retrieval
+  tasks:
+    - id: P4-T1
+      title: FTS5 + exact ID/hash lookup
+      contracts:
+        - 04_STORAGE/SCHEMA.sql
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+      tests:
+        - T-exact-id-first
+        - T-exact-lookup-p95
+        - T-fts-p95
+      depends_on: [P1-T3, P3-T4]
+    - id: P4-T2
+      title: Graph expansion, RRF fusion, authority/scope reranking
+      contracts:
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+      tests:
+        - T-authority-ranking
+        - T-scope-before-vector
+      depends_on: [P4-T1]
+    - id: P4-T3
+      title: Read-time authority re-check + redaction-aware fallback
+      contracts:
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+        - 01_ARCHITECTURE/SYSTEM_OVERVIEW.md
+      tests:
+        - T-supersession-authority
+        - T-scope-leakage
+      depends_on: [P4-T2]
+    - id: P4-T4
+      title: Capsule compiler + capsule cache keyed by policy_version/scope/watermark
+      contracts:
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+        - 03_CONTRACTS/state-machines.md
+      tests:
+        - T-capsule-p95
+        - T-capsule-policy-tighten
+        - T-capsule-stale-never-served
+        - T-capsule-omission-reported
+        - T-capsule-restricted-excluded
+      depends_on: [P4-T2, P2-T5]
+    - id: P4-T5
+      title: Index/cache rebuild from spine + records
+      contracts:
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+      tests:
+        - T-index-rebuild
+        - T-vectors-optional
+      depends_on: [P4-T1]
+
+phase_5:
+  title: Interfaces
+  tasks:
+    - id: P5-T1
+      title: MCP stdio + Streamable HTTP server, nine pinned tools
+      contracts:
+        - 03_CONTRACTS/mcp-tools.yaml
+        - 03_CONTRACTS/wire-protocol.md
+      tests:
+        - T-generic-mcp-client
+      depends_on: [P2-T3, P4-T2]
+    - id: P5-T2
+      title: REST hook ingestion + administration API
+      contracts:
+        - 03_CONTRACTS/openapi.yaml
+      tests:
+        - T-generic-mcp-client
+        - T-capture-ack-p95
+      depends_on: [P1-T5, P2-T3]
+    - id: P5-T3
+      title: lamf CLI (exact surface) + status/health
+      contracts:
+        - 03_CONTRACTS/CLI_REFERENCE.md
+      tests:
+        - T-five-profiles-shown
+      depends_on: [P1-T6, P2-T2]
+    - id: P5-T4
+      title: Failure containment for provider/model errors
+      contracts:
+        - 03_CONTRACTS/schemas/event.schema.json
+      tests:
+        - T-provider-failure
+      depends_on: [P5-T1]
+
+phase_6:
+  title: OpenClaw adapter
+  tasks:
+    - id: P6-T1
+      title: Resolve TODO-BIND markers against installed public OpenClaw SDK
+      contracts:
+        - 05_INTEGRATIONS/openclaw-plugin/index.ts
+        - 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md
+      tests:
+        - T-openclaw-fresh-install
+      depends_on: [P5-T1]
+    - id: P6-T2
+      title: Typed hooks per normative hook table + nonblocking checkpoints
+      contracts:
+        - 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md
+      tests:
+        - T-checkpoints-nonblocking
+        - T-orientation-first-session
+      depends_on: [P6-T1]
+    - id: P6-T3
+      title: Installer/uninstaller (0600 timestamped backups, idempotent, keep-data)
+      contracts:
+        - 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md
+        - 03_CONTRACTS/CLI_REFERENCE.md
+      tests:
+        - T-uninstall-preserves-data
+      depends_on: [P6-T1]
+    - id: P6-T4
+      title: Doctor diagnostics (openclaw doctor + lamf doctor --adapter openclaw --deep)
+      contracts:
+        - 03_CONTRACTS/CLI_REFERENCE.md
+        - 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md
+      tests:
+        - T-doctor-diagnostics
+      depends_on: [P6-T1, P5-T3]
+
+phase_7:
+  title: Multi-agent, multi-channel, council
+  tasks:
+    - id: P7-T1
+      title: agentId -> actor mapping, distinct private scopes, scope isolation
+      contracts:
+        - 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md
+        - 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md
+      tests:
+        - T-agent-scope-mapping
+        - T-scope-leakage
+      depends_on: [P6-T1, P4-T3]
+    - id: P7-T2
+      title: Channel identity metadata + confirmed-only merges + unmerge receipts
+      contracts:
+        - 03_CONTRACTS/state-machines.md
+        - 05_INTEGRATIONS/OPENCLAW_INTEGRATION.md
+      tests:
+        - T-channel-identity
+        - T-wrong-merge-unmerge
+        - T-auto-merge-forbidden
+        - T-merge-requires-confirmation
+        - T-group-channel-scope
+      depends_on: [P2-T1]
+    - id: P7-T3
+      title: Handoffs (CAS accept-once, fencing, leases)
+      contracts:
+        - 03_CONTRACTS/state-machines.md
+      tests:
+        - T-handoff-accept-once-fencing
+        - T-handoff-lease-expiry
+        - T-handoff-sibling-auto-expiry
+        - T-handoff-stale-fencing-rejected
+      depends_on: [P1-T3, P2-T3]
+    - id: P7-T4
+      title: Council seats, rounds, quorum ratification
+      contracts:
+        - 03_CONTRACTS/council.md
+      tests:
+        - T-council-recorder-cannot-ratify
+        - T-council-quorum-signatures
+        - T-council-seat-not-model
+        - T-council-handoff-roundtrip
+      depends_on: [P1-T2, P2-T3]
+
+phase_8:
+  title: Portability and recovery
+  tasks:
+    - id: P8-T1
+      title: Export bundle writer (XChaCha20-Poly1305, Argon2id, MAC, re-scan)
+      contracts:
+        - 07_PORTABILITY/PORTABILITY_AND_TRANSFER.md
+        - 03_CONTRACTS/schemas/export-manifest.schema.json
+      tests:
+        - T-needs-rebind
+        - T-secret-fixtures
+        - T-export-mac-verified
+        - T-export-tamper-rejected
+        - T-export-wrong-passphrase
+        - T-export-secret-rescan
+        - T-quarantine-export-exclusion
+      depends_on: [P1-T6, P3-T2]
+    - id: P8-T2
+      title: Staged import (decrypt, MAC, chain, allowlist, only-tightens)
+      contracts:
+        - 07_PORTABILITY/PORTABILITY_AND_TRANSFER.md
+      tests:
+        - T-import-path-traversal
+        - T-import-only-tightens
+        - T-import-never-auto-activates
+        - T-archive-extraction-limits
+        - T-instance-key-anchored
+      depends_on: [P8-T1, P2-T1]
+    - id: P8-T3
+      title: Rebind secrets, re-encrypt records, rebuild indexes, activate
+      contracts:
+        - 07_PORTABILITY/PORTABILITY_AND_TRANSFER.md
+        - 03_CONTRACTS/CLI_REFERENCE.md
+      tests:
+        - T-export-import-clean-machine
+        - T-index-rebuild
+      depends_on: [P8-T2, P4-T5]
+    - id: P8-T4
+      title: New-computer runbook verification (fresh + restore flows)
+      contracts:
+        - 07_PORTABILITY/NEW_OPENCLAW_COMPUTER.md
+      tests:
+        - T-export-import-clean-machine
+      depends_on: [P8-T3, P6-T4]
+
+phase_9:
+  title: Optional Git adapter
+  tasks:
+    - id: P9-T1
+      title: off/local/remote modes; sensitive/restricted exclusion (F12)
+      contracts:
+        - 07_PORTABILITY/OPTIONAL_GIT.md
+      tests:
+        - T-git-off-core-passes
+        - T-git-local-commits
+      depends_on: [P3-T1]
+    - id: P9-T2
+      title: Async commits, failure containment, spine-authoritative conflicts
+      contracts:
+        - 07_PORTABILITY/OPTIONAL_GIT.md
+      tests:
+        - T-git-failure-nonblocking
+      depends_on: [P9-T1]
+    - id: P9-T3
+      title: Remote mode (explicit policy, erasure non-support notice)
+      contracts:
+        - 07_PORTABILITY/OPTIONAL_GIT.md
+        - 03_CONTRACTS/schemas/security-policy.schema.json
+      tests:
+        - T-git-remote-explicit
+      depends_on: [P9-T1]
+
+phase_10:
+  title: Optional local AI enrichment
+  tasks:
+    - id: P10-T1
+      title: Local embeddings + vector cache (optional, model+hash keyed)
+      contracts:
+        - 04_STORAGE/INDEXING_AND_SEARCH.md
+      tests:
+        - T-vectors-optional
+        - T-scope-before-vector
+      depends_on: [P4-T2]
+    - id: P10-T2
+      title: Consolidation/contradiction proposals (policy-gated, never authority)
+      contracts:
+        - 03_CONTRACTS/schemas/memory-record.schema.json
+        - 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md
+      tests:
+        - T-prompt-cannot-escalate
+      depends_on: [P3-T1]
+    - id: P10-T3
+      title: UI / Obsidian read view
+      contracts:
+        - 03_CONTRACTS/CLI_REFERENCE.md
+      tests: []
+      depends_on: [P5-T3]
+
+phase_11:
+  title: Hardening and release
+  tasks:
+    - id: P11-T1
+      title: Fuzzing, load tests, benchmark gate
+      contracts:
+        - 08_BUILD_PLAN/BENCHMARKS.md
+        - 08_BUILD_PLAN/ACCEPTANCE_TESTS.md
+      tests:
+        - T-fts-p95
+        - T-capsule-p95
+        - T-capture-ack-p95
+        - T-exact-lookup-p95
+        - T-startup-scan-budget
+      depends_on: [P4-T1, P5-T1]
+    - id: P11-T2
+      title: Packaging, installers, signed releases, upgrade/rollback
+      contracts:
+        - 03_CONTRACTS/CLI_REFERENCE.md
+      tests: []
+      depends_on: [P11-T1]
+    - id: P11-T3
+      title: Final package validation + documentation freeze
+      contracts:
+        - tools/validate_package.py
+        - 08_BUILD_PLAN/ACCEPTANCE_TESTS.md
+      tests:
+        - T-canonical-hash-parity
+      depends_on: [P11-T1]

@@ -642,6 +642,22 @@ class Store:
             if col in filters and filters[col] is not None:
                 where.append(f"r.{col} = ?")
                 params.append(filters[col])
+        scopes = filters.get("scopes")
+        if scopes:
+            where.append("r.scope IN (%s)" % ",".join("?" for _ in scopes))
+            params.extend(scopes)
+        record_types = filters.get("record_types")
+        if record_types:
+            where.append("r.type IN (%s)" % ",".join("?" for _ in record_types))
+            params.extend(record_types)
+        sensitivity_max = filters.get("sensitivity_max", "ordinary")
+        sensitivity_rank = {"ordinary": 0, "sensitive": 1, "restricted": 2}
+        if sensitivity_max not in sensitivity_rank:
+            raise StoreError(f"invalid sensitivity ceiling: {sensitivity_max}")
+        where.append("CASE r.sensitivity WHEN 'ordinary' THEN 0 "
+                     "WHEN 'sensitive' THEN 1 WHEN 'restricted' THEN 2 "
+                     "ELSE 99 END <= ?")
+        params.append(sensitivity_rank[sensitivity_max])
         cond = ("AND " + " AND ".join(where)) if where else ""
         sql = (
             "SELECT r.*, -bm25(records_fts) AS score FROM records_fts f"

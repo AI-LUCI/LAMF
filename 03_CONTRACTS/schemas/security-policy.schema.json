@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lamf.dev/schemas/security-policy.schema.json",
+  "version": "2.0.0",
+  "title": "LAMF Security Policy",
+  "description": "Validates a LAMF security policy YAML/JSON document (DECISIONS.md §I, amended §U-10/U-11). Enforces the machine-checkable invariant-floor clauses F1–F12 via const/enum/conditional constraints. Every enum value is defined normatively in 02_SECURITY/SECURITY_PROFILE_OVERVIEW.md. Profile names are hyphenated everywhere (U-11); snake_case profile names are banned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "version",
+    "actor_auth",
+    "network",
+    "secrets",
+    "capture",
+    "promotion",
+    "model_self_approval",
+    "context",
+    "sharing",
+    "receipts",
+    "deletion",
+    "encryption",
+    "remote_sync",
+    "git",
+    "quarantine",
+    "approvals",
+    "policy_changes",
+    "council"
+  ],
+  "properties": {
+    "profile": {
+      "type": "string",
+      "enum": ["locked", "controlled", "trusted-local", "open-local", "ai-custom"],
+      "description": "Setup choice (U-11: hyphenated everywhere — YAML, schema, wire, CLI, docs; snake_case variants are banned). The four fixed profiles ship as profiles/*.yaml; ai-custom is produced by the 06_SETUP/ questionnaire flow."
+    },
+    "version": {
+      "const": 1,
+      "description": "Policy schema version. Pinned to 1 for package v2.0.0."
+    },
+    "actor_auth": {
+      "const": "required",
+      "description": "F2 (const): every actor authenticates; registration is pairing-only (lamf actor pair)."
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bind", "lan"],
+      "properties": {
+        "bind": {
+          "type": "string",
+          "enum": ["socket_only", "loopback", "lan"],
+          "description": "TCP bind surface; tighten lattice (U-10g): socket_only > loopback > lan. 'socket_only' = NO TCP listener at all — the L0 transport (Unix domain socket / Windows named pipe with SO_PEERCRED / client-SID peer check) is the only surface (tightest; locked profile). 'loopback' = 127.0.0.1/::1 only (L1). 'lan' = LAN listener (L2, requires lan.enabled/tls/auth per F12)."
+        },
+        "lan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "tls", "auth"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Must be true if and only if the operator opts into LAN access (F12 conditional)."
+            },
+            "tls": {
+              "type": "boolean",
+              "description": "F12: TLS 1.3 is mandatory whenever LAN is enabled."
+            },
+            "auth": {
+              "const": "required",
+              "description": "F12 (const): per-actor bearer token is mandatory whenever LAN is enabled; pinned required at all times so a LAN flip can never silently drop authentication."
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pre_sanitization", "value_detection", "excluded_sources"],
+      "properties": {
+        "pre_sanitization": {
+          "const": "required",
+          "description": "F1 (const): sanitizer runs server-side, synchronously, BEFORE any byte reaches the spool; fail-closed."
+        },
+        "value_detection": {
+          "const": "required",
+          "description": "F11 (const): value-based detectors (known prefixes, entropy, operator-registered values) active in every profile, alongside source exclusions."
+        },
+        "excluded_sources": {
+          "type": "array",
+          "minItems": 16,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "F11/U-10(a): path/keyword source exclusions that must never be captured. The 16-pattern baseline (SECRET_PATTERNS.md §2) is MANDATORY and enforced below via allOf+contains per pattern — operators may only extend, never remove or empty, the baseline.",
+          "allOf": [
+            { "contains": { "const": ".env" } },
+            { "contains": { "const": ".env.*" } },
+            { "contains": { "const": "*.pem" } },
+            { "contains": { "const": "*.key" } },
+            { "contains": { "const": "*.p12" } },
+            { "contains": { "const": "*.pfx" } },
+            { "contains": { "const": "id_rsa*" } },
+            { "contains": { "const": "id_ed25519*" } },
+            { "contains": { "const": "id_ecdsa*" } },
+            { "contains": { "const": "id_dsa*" } },
+            { "contains": { "const": ".aws/credentials" } },
+            { "contains": { "const": ".netrc" } },
+            { "contains": { "const": ".kube/config" } },
+            { "contains": { "const": "kubeconfig" } },
+            { "contains": { "const": "browser_credential_stores" } },
+            { "contains": { "const": "os_keychain" } }
+          ]
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinary", "sensitive", "full_prompt", "llm_transcript", "bounds"],
+      "properties": {
+        "ordinary": {
+          "type": "string",
+          "enum": ["approval", "quarantine", "automatic"],
+          "description": "Capture mode for ordinary-sensitivity events."
+        },
+        "sensitive": {
+          "type": "string",
+          "enum": ["approval", "quarantine", "protected_automatic", "sanitized_automatic"],
+          "description": "Capture mode for sensitive-category content. 'automatic' is not available here; the least-gated automatic modes still store into a restricted scope with gated disclosure."
+        },
+        "full_prompt": {
+          "type": "string",
+          "enum": ["off", "session_policy", "sanitized"],
+          "description": "Capture of full model prompts. Never raw/unsanitized."
+        },
+        "llm_transcript": {
+          "const": "off",
+          "description": "Floor (const): raw LLM input/output transcripts stay OFF in every profile (DECISIONS.md §S, A2-16)."
+        },
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["message_max_kib", "tool_excerpt_max_kib"],
+          "properties": {
+            "message_max_kib": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "description": "DECISIONS.md §F: message body truncation bound (KiB); 32 is the hard ceiling."
+            },
+            "tool_excerpt_max_kib": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8,
+              "description": "DECISIONS.md §F: tool-result excerpt truncation bound (KiB); 8 is the hard ceiling."
+            }
+          }
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["auto_durable_facts", "external_content"],
+      "properties": {
+        "auto_durable_facts": {
+          "type": "string",
+          "enum": ["no", "rule_limited", "yes_except_protected", "yes_except_invariant"],
+          "description": "Whether repeated user_direct facts may be promoted to durable memory without per-item approval."
+        },
+        "external_content": {
+          "const": "never_auto",
+          "description": "F5 (const): tool_output and external_content NEVER auto-promote; explicit user_direct confirmation or operator approval required."
+        }
+      }
+    },
+    "model_self_approval": {
+      "const": false,
+      "description": "F12 (const): a model may never approve its own durable memory changes."
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automatic", "capsule_max_tokens"],
+      "properties": {
+        "automatic": {
+          "type": "string",
+          "enum": ["no", "same_scope_bounded", "shared_bounded"],
+          "description": "Whether context capsules are injected automatically before model turns, and at what scope."
+        },
+        "capsule_max_tokens": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 4000,
+          "description": "Hard token budget for any compiled context capsule (memory_context / memory_orientation)."
+        }
+      }
+    },
+    "sharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cross_agent_read", "cross_channel_merge"],
+      "properties": {
+        "cross_agent_read": {
+          "type": "string",
+          "enum": ["approval", "role_scope", "registered_local"],
+          "description": "When one agent actor may read memory outside its own scope. 'registered_local' still means registered, authenticated, paired local actors only."
+        },
+        "cross_channel_merge": {
+          "type": "string",
+          "enum": ["manual", "confirmed", "suggest_confirm", "strong_id_confirmed"],
+          "description": "F6: identity merging across channels. Automatic merging is FORBIDDEN in every profile; there is no automatic enum value."
+        }
+      }
+    },
+    "receipts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["read"],
+      "properties": {
+        "read": {
+          "type": "string",
+          "enum": ["every_item", "sensitive_itemized", "sensitive_itemized_aggregate_ordinary"],
+          "description": "F10: disclosure receipts. Aggregation is permitted ONLY for ordinary reads; sensitive-category disclosures are always itemized. There is no 'off' value."
+        }
+      }
+    },
+    "deletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval", "erasure"],
+      "properties": {
+        "approval": {
+          "type": "string",
+          "enum": ["every_durable_item", "protected_items", "security_identity_only"],
+          "description": "Which deletions require operator approval."
+        },
+        "erasure": {
+          "const": "crypto_shredding",
+          "description": "F7 (const): erasure = tombstone + per-record data-key destruction; redaction-aware raw-evidence fallback."
+        }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at_rest", "export"],
+      "properties": {
+        "at_rest": {
+          "type": "string",
+          "enum": ["required", "sensitivity_driven", "recommended"],
+          "description": "At-rest encryption posture. Quarantine is encrypted at rest in every profile regardless of this setting (DECISIONS.md §J)."
+        },
+        "export": {
+          "const": "required",
+          "description": "F3 (const): export bundles are always passphrase-encrypted (XChaCha20-Poly1305, Argon2id) with keyed MAC over manifest/checksums/chain head."
+        }
+      }
+    },
+    "remote_sync": {
+      "type": "string",
+      "enum": ["denied_by_default", "explicit"],
+      "description": "Whether any memory content may leave the machine for remote sync. 'explicit' = per-destination operator opt-in only."
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "sensitive_classes"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["off", "local", "remote"],
+          "description": "Optional Git adapter mode. Git is never required for normal operation; remote mode documents erasure limits (F7)."
+        },
+        "sensitive_classes": {
+          "const": "excluded",
+          "description": "F12 (const): sensitive and restricted memory classes are excluded from Git in every mode and every profile."
+        }
+      }
+    },
+    "quarantine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ttl_days"],
+      "properties": {
+        "ttl_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90,
+          "description": "F12: quarantine time-to-live in days; on expiry items are purged (quarantined -> expired -> purged)."
+        }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ttl_hours", "rate_limit_per_actor_per_hour"],
+      "properties": {
+        "ttl_hours": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 168,
+          "description": "F8/U-10(c): pending approvals expire within [4, 168] hours; timeout = deny."
+        },
+        "rate_limit_per_actor_per_hour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240,
+          "description": "F8/U-10(b): approval-request rate limit per actor per hour, [1, 240]; anti approval-fatigue control."
+        }
+      }
+    },
+    "policy_changes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diff_display", "downgrade_cooldown_hours", "step_up_auth"],
+      "properties": {
+        "diff_display": {
+          "const": "required",
+          "description": "F8 (const): every policy change displays the effective diff before application (lamf security apply --require-confirmation)."
+        },
+        "downgrade_cooldown_hours": {
+          "type": "integer",
+          "minimum": 24,
+          "description": "F8/U-10(c): minimum hours before a policy-weakening change takes effect (any key moving down its U-10g lattice is a downgrade)."
+        },
+        "step_up_auth": {
+          "const": "required",
+          "description": "F8 (const): policy changes require operator step-up authentication (a fresh operator-credential assertion at most 5 minutes old, DECISIONS.md U-14)."
+        }
+      }
+    },
+    "council": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_seats_per_actor", "quorum"],
+      "properties": {
+        "max_seats_per_actor": {
+          "const": 1,
+          "description": "U-10(e) (const): an actor holds at most one council seat — seats can never be stacked to reach quorum (T-council-seat-not-model)."
+        },
+        "quorum": {
+          "type": "string",
+          "enum": ["majority", "two_thirds", "unanimous"],
+          "default": "majority",
+          "description": "U-10(e): ratification threshold for council_decision events (council.md §5); 'majority' = floor(seats/2)+1 member signatures."
+        }
+      },
+      "description": "U-10(e): council deliberation bounds (03_CONTRACTS/council.md)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "network": {
+            "properties": {
+              "bind": { "const": "lan" }
+            },
+            "required": ["bind"]
+          }
+        },
+        "required": ["network"]
+      },
+      "then": {
+        "properties": {
+          "network": {
+            "properties": {
+              "lan": {
+                "properties": {
+                  "enabled": { "const": true },
+                  "tls": { "const": true },
+                  "auth": { "const": "required" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "F12 conditional: a LAN bind is refused unless lan.enabled=true, lan.tls=true, lan.auth=required."
+    }
+  ]
+}

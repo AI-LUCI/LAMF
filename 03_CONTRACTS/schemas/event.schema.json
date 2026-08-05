@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lamf.dev/schemas/event.schema.json",
+  "version": "2.0.0",
+  "title": "LAMF Spine Event",
+  "description": "Witness Spine event per DECISIONS.md §G. Canonical hashing (LAMF-CANON-1, see canonical-hashing.md) computes `hash` over the event minus `hash`/`sig`; genesis prev_hash = 64 ASCII zeros; sig = Ed25519 over the 32 raw hash bytes, base64url. seq is the ordering authority; ts is advisory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "seq", "ts", "actor", "session", "type", "scope", "sensitivity", "taint", "payload_sha256", "prev_hash", "hash", "sig"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUIDv7"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "strictly monotonic per instance; the ordering authority"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "unix milliseconds; advisory only"
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "actor_id of the single authenticated author (wire-protocol.md §5)"
+    },
+    "session": {
+      "type": ["string", "null"],
+      "maxLength": 256
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "message", "response", "tool_call", "tool_result",
+        "session_start", "session_end", "memory_request", "handoff",
+        "policy_change", "correction", "failure", "recovery",
+        "checkpoint", "import", "export", "approval", "quarantine",
+        "council_claim", "council_objection", "council_vote", "council_decision",
+        "council_round_open", "council_round_close",
+        "capture_dropped", "spool_gap", "identity_merge", "identity_split",
+        "record_tombstoned", "actor_pair", "actor_revoke"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["ordinary", "sensitive", "restricted"]
+    },
+    "taint": {
+      "type": "string",
+      "enum": ["user_direct", "agent_generated", "tool_output", "external_content", "system"]
+    },
+    "payload": {
+      "type": ["object", "null"],
+      "description": "inline payload, canonical size ≤ 4 KiB (DECISIONS.md §G). XOR with payload_ref."
+    },
+    "payload_ref": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 key into payload_store; used when payload exceeds inline bound. XOR with payload."
+    },
+    "payload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of LAMF-CANON-1 bytes of the payload content (identical inline or by-ref)"
+    },
+    "prev_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "hash of event at seq-1; genesis = 64 ASCII zeros"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "lowercase hex SHA-256 of LAMF-CANON-1 bytes of the event without hash/sig"
+    },
+    "sig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+={0,2}$",
+      "description": "Ed25519 signature by the actor's key over the 32 raw hash bytes, base64url (RFC 4648 §5). Autonomous events authored by the well-known system actor 'lamf-system' are signed by the instance key (DECISIONS.md U-07)."
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "channel_identity", "thread"],
+      "properties": {
+        "channel": {"type": "string", "minLength": 1, "maxLength": 64},
+        "channel_identity": {"type": "string", "minLength": 1, "maxLength": 256},
+        "thread": {"type": "string", "minLength": 1, "maxLength": 256}
+      },
+      "description": "optional channel provenance (DECISIONS.md U-17/V3-11, T-channel-identity); channel metadata also marks paste/drop so pasted or file-dropped content is classified external_content (U-09c)"
+    },
+    "sanitizer_note": {
+      "type": "string",
+      "maxLength": 1024,
+      "description": "optional sanitizer annotation (DECISIONS.md U-15), e.g. a detector hit beyond the stored bound; keeps the sanitization gap auditable"
+    },
+    "capture_sig": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_-]+={0,2}$",
+      "description": "optional hook-side Ed25519 signature produced at capture time, base64url (DECISIONS.md U-04; spool-format.md §2). Present in the deferred spool form and in finalized events when the adapter signed at capture. Distinct from `sig`, which is over the final chain hash."
+    }
+  },
+  "oneOf": [
+    {"required": ["payload"], "not": {"required": ["payload_ref"]}},
+    {"required": ["payload_ref"], "not": {"required": ["payload"]}}
+  ]
+}

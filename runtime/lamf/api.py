@@ -605,6 +605,10 @@ def search(ctx, query: str, limit: int = 10, filters=None) -> dict:
     store = getattr(ctx, "store", None)
     if store is None:
         raise ApiError("unavailable", "store not attached to server context")
+    filters = dict(filters or {})
+    # Privacy-safe baseline for every harness. Sensitive or restricted recall
+    # requires an explicit ceiling on the individual tool call.
+    filters.setdefault("sensitivity_max", "ordinary")
     try:
         rows = store.search_fts(query, limit=limit, filters=filters)
     except TypeError:
@@ -644,14 +648,20 @@ def _record_body(store, record_id: str) -> str:
     return ""
 
 
-def build_capsule(ctx, purpose: str, max_tokens: int, scopes=None) -> dict:
+def build_capsule(ctx, purpose: str, max_tokens: int, scopes=None,
+                  sensitivity_max: str = "ordinary",
+                  include_record_types=None) -> dict:
     """Bounded context capsule (memory_context / POST /v1/context)."""
     policy = getattr(ctx, "policy", None)
     store = getattr(ctx, "store", None)
     ceiling = min(4000, capsule_max_tokens(policy))
     budget = max(64, min(int(max_tokens or ceiling), ceiling))
-    found = search(ctx, purpose, limit=25,
-                   filters={"scopes": scopes} if scopes else None)
+    filters = {"sensitivity_max": sensitivity_max or "ordinary"}
+    if scopes:
+        filters["scopes"] = scopes
+    if include_record_types:
+        filters["record_types"] = include_record_types
+    found = search(ctx, purpose, limit=25, filters=filters)
     items, omissions, used = [], [], 0
     for r in found["results"]:
         body = _record_body(store, r["record_id"]) or r["snippet"]
@@ -692,7 +702,8 @@ def orientation(ctx, max_tokens: int = 1200, session=None) -> dict:
     if store is not None:
         for key, q in queries.items():
             try:
-                for r in search(ctx, q, limit=5)["results"]:
+                for r in search(ctx, q, limit=5,
+                                filters={"sensitivity_max": "ordinary"})["results"]:
                     if r["state"] in ("active", "draft"):
                         sections[key].append(r)
             except ApiError:

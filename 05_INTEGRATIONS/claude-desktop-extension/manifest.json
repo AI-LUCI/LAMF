@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "lamf-memory-desktop",
+  "display_name": "LAMF Memory",
+  "version": "0.1.1",
+  "description": "Connect Claude Desktop to an existing local LAMF memory authority.",
+  "long_description": "Uses the selected LAMF installation's existing runtime, policy, event spine, record store, and data directory. The extension contains no memory database, keys, credentials, or copied records.",
+  "author": {
+    "name": "AI-LUCI"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AI-LUCI/LAMF.git"
+  },
+  "homepage": "https://github.com/AI-LUCI/LAMF",
+  "documentation": "https://github.com/AI-LUCI/LAMF",
+  "support": "https://github.com/AI-LUCI/LAMF/issues",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "local-first",
+    "MCP",
+    "Claude Desktop",
+    "LAMF"
+  ],
+  "tools_generated": true,
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {
+        "LAMF_ROOT": "${user_config.lamf_root}",
+        "LAMF_HARNESS": "claude-desktop"
+      }
+    }
+  },
+  "user_config": {
+    "lamf_root": {
+      "type": "directory",
+      "title": "LAMF installation folder",
+      "description": "Select the existing LAMF installation containing runtime/lamf_mcp.py and data/. Do not select the data folder itself.",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.24012.0",
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

@@ -2,7 +2,7 @@
   "name": "lamf-memory",
   "version": "2.0.0",
   "private": true,
-  "description": "LAMF (Ledgered Agent Memory Fabric) native OpenClaw memory plugin (kind: memory). No external npm dependencies — Node >= 24 fetch and node:* builtins only.",
+  "description": "LAMF (Local Agent Memory Fabric) native OpenClaw memory plugin (kind: memory). No external npm dependencies — Node >= 24 fetch and node:* builtins only.",
   "type": "module",
   "main": "index.ts",
   "engines": {

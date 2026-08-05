@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lamf.dev/schemas/export-manifest.schema.json",
+  "version": "2.0.0",
+  "title": "LAMF Export Bundle Manifest",
+  "description": "manifest.json inside an encrypted .lamf export bundle (DECISIONS.md §M.2, U-13). Container format: tar (ustar) payload encrypted with chunked XChaCha20-Poly1305 (1 MiB chunks, counter nonce). Manifest + checksums are MACed with an HKDF-derived export key inside the encrypted container. Extraction caps on import: at most 10,000 entries and 4 GiB uncompressed (no compression, so no ratio guard); path allowlist `^[a-z0-9_./-]+$` PLUS a Windows device-name denylist (con, nul, aux, prn, com1-9, lpt1-9 — any case, any extension) enforced OUTSIDE the regex, and empty segments, '.', 'a//b', 'a/./b', and trailing '/' are rejected. Import verifies MAC/checksums, checkpoint signature and chain against the pinned instance pubkey (operator confirms the fingerprint out-of-band), applies the only-tightens policy rule, and always rebuilds indexes and vector caches from the spine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "lamf_version", "created_at", "seq_range", "checkpoint", "files", "schema_versions", "policy_profile", "excludes", "mac"],
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "export bundle format version"
+    },
+    "lamf_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "semver of the exporting LAMF instance (package version, e.g. 2.0.0)"
+    },
+    "created_at": {
+      "type": "integer",
+      "description": "unix ms when the bundle was built"
+    },
+    "seq_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lo", "hi"],
+      "properties": {
+        "lo": {"type": "integer", "minimum": 1},
+        "hi": {"type": "integer", "minimum": 1}
+      },
+      "description": "inclusive spine seq range contained in the bundle"
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq_hi", "chain_head_hash", "event_count", "instance_sig", "instance_pubkey", "fingerprint"],
+      "properties": {
+        "seq_hi": {"type": "integer", "minimum": 1},
+        "chain_head_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "displayed at export; operator types it at import (DECISIONS.md §H out-of-band confirm)"
+        },
+        "event_count": {"type": "integer", "minimum": 0},
+        "instance_sig": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+={0,2}$",
+          "description": "instance Ed25519 signature over the checkpoint, base64url"
+        },
+        "instance_pubkey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+={0,2}$",
+          "description": "instance Ed25519 public key (base64url) that signed this checkpoint, pinned in the manifest (U-13d); import anchors checkpoint verification on it (T-instance-key-anchored)"
+        },
+        "fingerprint": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "display fingerprint of instance_pubkey; the operator confirms it out-of-band at import (TOFU, U-13d)"
+        }
+      },
+      "description": "latest sealed checkpoint (DECISIONS.md §H) — the chain head"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*\\.\\.)[a-z0-9_./-]+$",
+            "maxLength": 512,
+            "description": "safe relative path only: lowercase charset [a-z0-9_./-], no leading '/', no '..' anywhere, no backslash, no symlinks (DECISIONS.md §M.3 / floor F4). Extraction (U-13c) additionally rejects — outside this regex — empty segments, '.', 'a//b', 'a/./b', trailing '/', and the Windows device-name denylist (con, nul, aux, prn, com1-9, lpt1-9, any case, any extension)"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "memory_record", "export_manifest", "security_policy", "sqlite_schema"],
+      "properties": {
+        "event": {"type": "string"},
+        "memory_record": {"type": "string"},
+        "export_manifest": {"type": "string"},
+        "security_policy": {"type": "string"},
+        "sqlite_schema": {"type": "integer", "minimum": 1, "description": "schema_migrations head"}
+      }
+    },
+    "policy_profile": {
+      "type": "string",
+      "enum": ["locked", "controlled", "trusted-local", "open-local", "ai-custom"],
+      "description": "active profile at export; import applies the only-tightens rule against the local profile/floor"
+    },
+    "excludes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["quarantine", "vector_cache", "indexes", "secrets", "foreign_index_dbs", "receipts", "spool", "instance_key_material"]
+      },
+      "description": "content classes deliberately absent from the bundle: quarantine (excluded unless approved first, §J/§M.8), vector caches and indexes (always rebuilt from spine, §M.3/§M.8), secret values (never exported, §M.7), receipts (operator-read-only, U-08f), spool segments, and all instance key material (the instance key is NEVER exported, U-13a)"
+    },
+    "mac": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "lowercase hex HMAC-SHA-256 over the manifest and checksums (DECISIONS.md U-13b): mac = HMAC-SHA-256(key = HKDF-SHA-256(export_key, info=\"lamf-manifest-mac\"), msg = canon(manifest_without_mac) || canon(checksums)); verified after container decrypt, before any extraction"
+    }
+  }
+}

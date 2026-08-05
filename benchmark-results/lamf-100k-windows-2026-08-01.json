@@ -1,0 +1,39 @@
+{
+  "schema": "lamf-benchmark-result-v1",
+  "passed": true,
+  "baseline": {
+    "cpu": "AMD64 Family 26 Model 96 Stepping 0, AuthenticAMD",
+    "cores": 16,
+    "os": "Windows-11-10.0.26100-SP0",
+    "python": "3.12.13",
+    "sqlite": "3.50.4",
+    "filesystem": "Windows local volume",
+    "dataset_seed": 20260801,
+    "records": 100000,
+    "iterations": 200,
+    "ordinary_corpus": 10000
+  },
+  "fixture_build_seconds": 386.9733181986958,
+  "retrieval_misses": 0,
+  "startup_verify_ms": 102.6277,
+  "startup_chain_ok": true,
+  "sanitizer_false_positives": 0,
+  "metrics": {
+    "capture_ack_p95_ms": 1.2324,
+    "exact_id_lookup_p95_ms": 0.2321,
+    "exact_hash_lookup_p95_ms": 0.1648,
+    "warm_fts_p95_ms": 1.846,
+    "capsule_p95_ms": 10.2437,
+    "startup_events_verified": 1000,
+    "sanitizer_false_positive_rate": 0.0
+  },
+  "targets": {
+    "capture_ack_p95_ms": 200.0,
+    "exact_id_lookup_p95_ms": 50.0,
+    "exact_hash_lookup_p95_ms": 50.0,
+    "warm_fts_p95_ms": 300.0,
+    "capsule_p95_ms": 2000.0,
+    "startup_events_verified": 1000,
+    "sanitizer_false_positive_rate": 0.001
+  }
+}

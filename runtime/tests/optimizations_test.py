@@ -1,4 +1,4 @@
-"""Core optimization-loader tests with no optional pack installed."""
+"""Isolation and switching tests for LAMF agent optimizations."""
 
 from __future__ import annotations
 
@@ -19,20 +19,34 @@ def main() -> int:
         optimizations.initialize(data)
         initial = optimizations.status(data)
         assert initial["enabled"]
-        assert initial["modules"] == []
-        assert optimizations.compiled_instructions(data) == ""
+        expected_ids = {
+            "minimal-solution", "selective-workflows", "stale-context-guards",
+            "surgical-changes", "verified-execution",
+        }
+        assert {item["id"] for item in initial["modules"]} == expected_ids
+        assert all(item["enabled"] and item["valid"] for item in initial["modules"])
 
-        try:
-            optimizations.set_module(data, "not-installed", False)
-        except ValueError as exc:
-            assert "unknown optimization" in str(exc)
-        else:
-            raise AssertionError("missing modules must not appear configurable")
+        for module_id in sorted(expected_ids):
+            isolated_data = Path(td) / f"isolated-{module_id}"
+            optimizations.initialize(isolated_data)
+            optimizations.set_module(isolated_data, module_id, False)
+            states = {
+                item["id"]: item["enabled"]
+                for item in optimizations.status(isolated_data)["modules"]
+            }
+            assert states[module_id] is False
+            assert all(value for key, value in states.items() if key != module_id)
+
+        optimizations.set_module(data, "minimal-solution", False)
+        text = optimizations.compiled_instructions(data)
+        assert "smallest safe solution" not in text
+        assert "directly required" in text
+        assert "stale context" in text
 
         optimizations.set_global(data, False)
         assert optimizations.compiled_instructions(data) == ""
         optimizations.set_global(data, True)
-        assert optimizations.compiled_instructions(data) == ""
+        assert "directly required" in optimizations.compiled_instructions(data)
 
         optimizations.config_path(data).write_text("{broken", encoding="utf-8")
         broken = optimizations.status(data)
@@ -52,7 +66,7 @@ def main() -> int:
         found = {item["id"]: item for item in optimizations.discover(root)}
         assert found["good"]["error"] is None
         assert found["bad"]["error"]
-    print("PASS: core works without the optional pack and invalid state fails open")
+    print("PASS: every module switch is isolated and invalid state fails open")
     return 0
 
 
