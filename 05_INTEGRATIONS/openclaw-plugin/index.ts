@@ -1,5 +1,5 @@
 /**
- * lamf-memory — LAMF (Ledgered Agent Memory Fabric) native OpenClaw memory plugin.
+ * lamf-memory — LAMF (Local Agent Memory Fabric) native OpenClaw memory plugin.
  *
  * kind: "memory". Registers LAMF as OpenClaw's memory capability:
  *   - service start  -> health-check the local LAMF server (GET /v1/status)
@@ -442,7 +442,7 @@ export default definePluginEntry({
   id: "lamf-memory",
   name: "LAMF Memory",
   description:
-    "LAMF (Ledgered Agent Memory Fabric): governed, event-sourced, local-first memory for OpenClaw. " +
+    "LAMF (Local Agent Memory Fabric): governed, event-sourced, local-first memory for OpenClaw. " +
     "Injects a taint-badged orientation capsule, captures final-turn messages, and exposes " +
     "memory_search / memory_remember / memory_context / memory_handoff over the local LAMF server.",
   kind: "memory",

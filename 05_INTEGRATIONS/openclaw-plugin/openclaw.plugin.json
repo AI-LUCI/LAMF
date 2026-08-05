@@ -2,7 +2,7 @@
   "id": "lamf-memory",
   "name": "LAMF Memory",
   "version": "2.0.0",
-  "description": "LAMF (Ledgered Agent Memory Fabric) native memory capability for OpenClaw: governed, event-sourced, local-first agent memory with taint-badged context injection.",
+  "description": "LAMF (Local Agent Memory Fabric) native memory capability for OpenClaw: governed, event-sourced, local-first agent memory with taint-badged context injection.",
   "kind": "memory",
   "activation": {
     "onStartup": false

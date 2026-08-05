@@ -1,0 +1,34 @@
+// LAMF retrieval pipeline — 11 stages.
+// Editable source of retrieval_pipeline.svg. Re-render: dot -Tsvg retrieval_pipeline.dot > retrieval_pipeline.svg
+// Normative text: 04_STORAGE/INDEXING_AND_SEARCH.md (index is candidate generator;
+// spine + records are authority; read-time re-check is mandatory).
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontname="Arial"];
+
+  q       [label="Query + actor + purpose"];
+  pre     [label="Pre-query scope policy"];
+  exact   [label="Exact ID/hash"];
+  fts     [label="FTS5 BM25"];
+  graphn  [label="Graph neighbors"];
+  vec     [label="Local vectors (optional)"];
+  rrf     [label="RRF fusion"];
+  rank    [label="Authority + freshness + scope rerank"];
+  filter  [label="Supersession + contradiction + redaction"];
+  cap     [label="Bounded context capsule"];
+  receipt [label="Disclosure receipt"];
+
+  q -> pre;
+  pre -> exact;
+  pre -> fts;
+  pre -> graphn;
+  pre -> vec [style=dashed];
+  exact -> rrf;
+  fts -> rrf;
+  graphn -> rrf;
+  vec -> rrf;
+  rrf -> rank;
+  rank -> filter;
+  filter -> cap;
+  cap -> receipt;
+}

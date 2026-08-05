@@ -144,7 +144,7 @@ Every entry must contain:
   and are not claimed as LAMF results. Any future retrieval adaptation requires
   independent evaluation and a new ledger update.
 
-### OPT-OH-MY-PI — oh-my-pi Hashline
+### OPT-OH-MY-PI - oh-my-pi Hashline
 
 - **Upstream:** [can1357/oh-my-pi](https://github.com/can1357/oh-my-pi),
   specifically the `@oh-my-pi/hashline` component.
@@ -156,20 +156,21 @@ Every entry must contain:
 - **What influenced LAMF:** content-hash mutation preconditions, stale-anchor
   rejection before mutation, narrow recovery from current state, and preflight
   of multi-target edits before any part lands.
-- **LAMF surfaces:** optional `stale-context-guards`; the optimization discovery
+- **LAMF surfaces:** `stale-context-guards`; the daily optimization discovery
   process and its first report.
 - **Incorporation:** conceptual synthesis with a generic optimistic-concurrency
   fallback for harnesses without hash-anchored editing.
 - **Copied source:** no Hashline source, prompt text, grammar, or patch format is
   vendored. LAMF uses original provider-neutral wording.
 - **Notes:** upstream token and edit-success measurements are not claimed as
-  LAMF results. LAMF's optional module requires independent validation.
+  LAMF results. LAMF's module requires independent cross-harness validation.
 
 ## Maintenance record
 
 | Date | Change | Updated by |
 |---|---|---|
-| 2026-08-02 | Created the living ledger and recorded all repositories evaluated for LAMF Optimizations. | Codex, at the project maintainer's request |
+| 2026-08-02 | Created the living ledger and recorded all repositories evaluated for LAMF Optimizations. | Codex, at Marcel's request |
+| 2026-08-02 | Added `OPT-OH-MY-PI` for the stale-context optimization found by the first daily discovery scan. | Codex, at Marcel's request |
 | 2026-08-02 | Re-checked upstream licenses before the first public distribution. Confirmed Ponytail, Matt Pocock Skills, Gas Town, and Ruflo as MIT; Mem0 as Apache-2.0; the Karpathy-derived repository still has no root license; corrected Multica from Apache-2.0 to its current restricted Multica License. No upstream code or prose is vendored. | Codex |
-| 2026-08-02 | Added `OPT-OH-MY-PI`, re-confirmed the upstream MIT license, and separated optimization modules from the core public distribution. | Codex |
-| 2026-08-02 | Re-checked current upstream repository license metadata for the public-launch gate; existing license caveats remain in force and no external material was newly incorporated. | Codex |
+| 2026-08-02 | Re-confirmed oh-my-pi's root MIT license before publishing the optimization layer as a separate optional download. | Codex |
+| 2026-08-02 | Re-checked current upstream repository license metadata for the public-launch gate: Ponytail, Matt Pocock Skills, Gas Town, Ruflo, and oh-my-pi report MIT; Mem0 reports Apache-2.0; the Karpathy-derived repository still reports no root license; Multica remains non-standard/NOASSERTION and must retain its restricted-license warning. No external material was newly incorporated. | Codex |

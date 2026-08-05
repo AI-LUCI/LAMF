@@ -40,7 +40,7 @@ def main():
 
             context = client.tool("memory_context", {
                 "purpose": phrase, "scopes": ["test:final-recall"],
-                "max_tokens": 500})
+                "max_tokens": 500, "sensitivity_max": "sensitive"})
             assert phrase in json.dumps(context, ensure_ascii=False)
             transcript.append({"step": "context", "result": context})
 
@@ -52,4 +52,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -1,0 +1,39 @@
+// LAMF portable restore — import order per DECISIONS section M (normative).
+// Editable source of portable_restore.svg. Re-render: dot -Tsvg portable_restore.dot > portable_restore.svg
+// Normative text: 07_PORTABILITY/PORTABILITY_AND_TRANSFER.md.
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontname="Arial"];
+
+  old      [label="Computer A\nLAMF + OpenClaw"];
+  bundle   [label="Encrypted + MACed .lamf bundle\n(passphrase mandatory, floor F3)"];
+  decrypt  [label="1. Verify passphrase / decrypt"];
+  mac      [label="2. Verify manifest MAC + checksums"];
+  chain    [label="3. Verify checkpoint sig + event chain\n(operator confirms head out-of-band)"];
+  paths    [label="4. Path allowlist check"];
+  staging  [label="5. Migrate into staging"];
+  tighten  [label="6. Policy only-tightens check"];
+  rebind   [label="7. Rebind secrets (needs_rebind)"];
+  restore  [label="8. Restore / re-encrypt records\n(new local data keys)"];
+  rebuild  [label="9. Rebuild indexes from spine\n(foreign indexes never used)"];
+  activate [label="10. lamf activate (atomic swap)\nimport spine event"];
+  newpc    [label="Computer B\nFresh LAMF + OpenClaw"];
+  orient   [label="First-session orientation"];
+
+  secrets  [label="Secrets not exported\nrebind on Computer B", shape=note];
+
+  old -> bundle;
+  bundle -> decrypt;
+  decrypt -> mac;
+  mac -> chain;
+  chain -> paths;
+  paths -> staging;
+  staging -> tighten;
+  tighten -> rebind;
+  rebind -> restore;
+  restore -> rebuild;
+  rebuild -> activate;
+  activate -> newpc;
+  newpc -> orient;
+  secrets -> rebind [style=dashed];
+}

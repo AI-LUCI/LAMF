@@ -1,7 +1,7 @@
 ---
 name: lamf-memory
 description: >-
-  How and when to use LAMF (Ledgered Agent Memory Fabric) long-term memory:
+  How and when to use LAMF (Local Agent Memory Fabric) long-term memory:
   recall past context, remember durable facts, fetch purpose-built context
   capsules, and hand work off across sessions. Use whenever the user references
   something from an earlier conversation, when you learn something worth

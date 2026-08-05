@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lamf.dev/schemas/memory-record.schema.json",
+  "version": "2.0.0",
+  "title": "LAMF Memory Record",
+  "description": "Durable memory record. Records are data, not authority (floor F5): confidence is metadata only, never authority; taint labels are mandatory. State machine per state-machines.md §1: draft → active → {superseded, contradicted, expired, tombstoned}; tombstoned is terminal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "title", "body", "tags", "entities", "scope", "owner_actor", "sensitivity", "taint", "state", "version", "supersedes", "source_events", "confidence", "created_seq", "updated_seq", "expires_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "record id"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["fact", "preference", "identity", "relationship", "decision", "task", "procedure", "failure_lesson", "episode", "handoff_record", "council_record"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 32768,
+      "description": "≤32768 characters; the 32 KiB BYTE bound is enforced at the capture path (V1-20, DECISIONS.md §F.3)"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 64},
+      "maxItems": 32
+    },
+    "entities": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 128},
+      "maxItems": 64
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "owner_actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "actor_id that owns this record"
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["ordinary", "sensitive", "restricted"]
+    },
+    "taint": {
+      "type": "string",
+      "enum": ["user_direct", "agent_generated", "tool_output", "external_content", "system"]
+    },
+    "state": {
+      "type": "string",
+      "enum": ["draft", "active", "superseded", "contradicted", "expired", "tombstoned"]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "record version; cache keys are (record_id, version) per DECISIONS.md §N"
+    },
+    "supersedes": {
+      "type": ["string", "null"],
+      "maxLength": 128,
+      "description": "record id this record replaces, or null"
+    },
+    "source_events": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 128},
+      "description": "spine event ids that justify this record (citation path)"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "metadata only — NEVER authority (floor F5)"
+    },
+    "created_seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "spine seq at which this record version was created"
+    },
+    "updated_seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "spine seq of the last transition affecting this record"
+    },
+    "expires_at": {
+      "type": ["integer", "null"],
+      "description": "unix ms; null = no expiry. Expiry does not delete evidence."
+    }
+  }
+}
