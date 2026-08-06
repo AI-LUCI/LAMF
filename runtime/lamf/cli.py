@@ -444,7 +444,12 @@ def cmd_doctor(args) -> int:
         check(False, f"policy loads: {e}", "re-run `lamf init --profile NAME`")
     for name, perm in (("instance.key", 0o600), ("operator.token", 0o600)):
         p = data_dir / name
-        ok = p.exists() and (p.stat().st_mode & 0o777) == perm
+        if sys.platform == "win32":
+            # Windows does not preserve Unix permission bits; the runtime creates
+            # the files with restricted ACLs via os.O_CREAT.  Just verify existence.
+            ok = p.exists()
+        else:
+            ok = p.exists() and (p.stat().st_mode & 0o777) == perm
         check(ok, f"{name} exists with 0600 perms", "re-run `lamf init`")
     try:
         ctx = _open_ctx(data_dir)
@@ -655,7 +660,11 @@ def cmd_optimizations(args) -> int:
 
 
 def cmd_harness(args) -> int:
-    from .harness import HARNESS_IDS, apply_grok, apply_hermes, matrix, render, validate_all
+    from .harness import (
+        HARNESS_IDS, apply_generic_json, apply_grok, apply_hermes,
+        kimi_config_path, matrix, remove_generic_json, remove_grok,
+        remove_hermes, render, validate_all,
+    )
     runtime_dir = Path(__file__).resolve().parent.parent
     data_dir = _data_dir(args)
     if args.harness_action == "list":
@@ -668,9 +677,40 @@ def cmd_harness(args) -> int:
         if args.harness_id == "hermes":
             config = Path(args.config or "~/.hermes/config.yaml").expanduser()
             result = apply_hermes(config, runtime_dir, data_dir)
+        elif args.harness_id == "gemini":
+            config = Path(args.config or "~/.gemini/settings.json").expanduser()
+            result = apply_generic_json(config, runtime_dir, data_dir,
+                                        owned_key="lamf-memory", harness_id="gemini")
         else:
             config = Path(args.config or "~/.grok/config.toml").expanduser()
             result = apply_grok(config, runtime_dir, data_dir)
+        print(json.dumps(result, indent=2))
+        return EXIT_OK
+    if args.harness_action == "disconnect":
+        hid = args.harness_id
+        if hid == "hermes":
+            config = Path(args.config or "~/.hermes/config.yaml").expanduser()
+            result = remove_hermes(config)
+        elif hid == "grok":
+            config = Path(args.config or "~/.grok/config.toml").expanduser()
+            result = remove_grok(config)
+        elif hid == "gemini":
+            config = Path(args.config or "~/.gemini/settings.json").expanduser()
+            result = remove_generic_json(config)
+        elif hid == "kimi":
+            config = Path(args.config or str(kimi_config_path())).expanduser()
+            result = remove_generic_json(config)
+        elif hid == "claude":
+            config = Path(args.config or "~/.claude/mcp.json").expanduser()
+            result = remove_generic_json(config)
+        elif hid == "generic":
+            if not args.config:
+                _err("disconnect generic requires --config")
+                return EXIT_USAGE
+            result = remove_generic_json(Path(args.config))
+        else:
+            _err(f"disconnect not implemented for {hid!r}")
+            return EXIT_USAGE
         print(json.dumps(result, indent=2))
         return EXIT_OK
     errors = validate_all(runtime_dir, data_dir)
@@ -788,6 +828,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_verify)
 
     sp = sub.add_parser("mcp", parents=[common], help="stdio MCP server (mcp_server.serve_stdio)")
+    sp.add_argument("--harness", default=None,
+                    help="harness identifier for the MCP session (accepted for config parity)")
     sp.set_defaults(func=cmd_mcp)
 
     sp = sub.add_parser("optimizations", parents=[common],
@@ -810,13 +852,18 @@ def build_parser() -> argparse.ArgumentParser:
     hp.set_defaults(func=cmd_harness)
     hp = hsub.add_parser("emit", help="print a registration snippet for one harness")
     hp.add_argument("--data-dir", default=None, help=argparse.SUPPRESS)
-    hp.add_argument("harness_id", choices=("codex", "claude", "kimi", "grok", "openclaw", "hermes", "generic"))
+    hp.add_argument("harness_id", choices=("codex", "claude", "kimi", "gemini", "grok", "openclaw", "hermes", "generic"))
     hp.set_defaults(func=cmd_harness)
     hp = hsub.add_parser("doctor", help="validate every generated registration")
     hp.add_argument("--data-dir", default=None, help=argparse.SUPPRESS)
     hp.set_defaults(func=cmd_harness)
     hp = hsub.add_parser("apply", help="idempotently merge a registration into a harness config")
-    hp.add_argument("harness_id", choices=("hermes", "grok"))
+    hp.add_argument("harness_id", choices=("hermes", "gemini", "grok"))
+    hp.add_argument("--config", default=None, help="override the harness config path")
+    hp.add_argument("--data-dir", default=None, help=argparse.SUPPRESS)
+    hp.set_defaults(func=cmd_harness)
+    hp = hsub.add_parser("disconnect", help="remove the LAMF server entry from a harness config")
+    hp.add_argument("harness_id", choices=("codex", "claude", "kimi", "gemini", "grok", "openclaw", "hermes", "generic"))
     hp.add_argument("--config", default=None, help="override the harness config path")
     hp.add_argument("--data-dir", default=None, help=argparse.SUPPRESS)
     hp.set_defaults(func=cmd_harness)

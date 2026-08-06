@@ -12,6 +12,53 @@ python --version
 
 On Windows, the `py` launcher is also supported. OpenClaw users additionally need Node.js 24 or newer.
 
+## 1.1 Optional graphical Windows 11 installer
+
+For Windows 11 x64, a self-contained installer is built at
+[`dist/LAMF-Setup-x64.exe`](dist/LAMF-Setup-x64.exe). It does not require a
+separate Python installation.
+
+```powershell
+.\dist\LAMF-Setup-x64.exe
+```
+
+Silent install with all choices on the command line:
+
+```powershell
+.\dist\LAMF-Setup-x64.exe /SILENT /INSTALLDIR="C:\Program Files\LAMF" /DATADIR="C:\Users\Me\LAMF-Data" /PROFILE=controlled /HARNESSES=kimi,codex /MODULES=minimal-solution,verified-execution /OPTIMIZATIONS_ENABLED=1
+```
+
+`/MODULES` is optional; omit it to install without optimization modules, or list
+any subset of `minimal-solution`, `verified-execution`, `selective-workflows`,
+`stale-context-guards`, and `surgical-changes`. Modules can be toggled later with
+`lamf optimizations`.
+
+What the installer includes and exposes:
+
+- Embedded Python runtime, LAMF application package, native launchers, and the
+  optimization instruction pack.
+- Selectable **application directory** and **private data directory**.
+- **Security profiles**: `locked`, `controlled` (default), `trusted-local`,
+  `open-local`.
+- **Harness integrations**: Codex, Claude, Kimi, Gemini, Grok, OpenClaw,
+  Hermes, and a generic MCP-client snippet.
+- **Optimization module selection** during setup; toggle later with
+  `lamf optimizations status|on|off` and per-module `enable|disable`.
+- **Preserved data on uninstall**: the private data directory is left intact
+  unless explicitly removed.
+
+Verified:
+
+- 14/14 smoke tests pass (`runtime/tests/smoke_test.py`).
+- 141 installer/launcher tests pass (`installer/windows/tests/`).
+- Live Kimi MCP acceptance handshake verified.
+
+**SmartScreen notice:** the current artifact is **unsigned**. Windows may show a
+SmartScreen or AppLocker warning. Use the companion
+[`dist/LAMF-Setup-x64.exe.sha256`](dist/LAMF-Setup-x64.exe.sha256) file to verify
+integrity; the hash confirms the file bytes match but is not a substitute for
+publisher authentication.
+
 ## 2. Choose a private data location
 
 The installer defaults to a LAMF directory in the current user's home folder. To make the boundary explicit, pass a location that is not inside this repository.
