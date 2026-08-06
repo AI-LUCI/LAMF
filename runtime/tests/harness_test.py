@@ -11,7 +11,11 @@ from types import SimpleNamespace
 RUNTIME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RUNTIME))
 
-from lamf.harness import HARNESS_IDS, HARNESSES, apply_grok, apply_hermes, render, server_spec, validate_all  # noqa: E402
+from lamf.harness import (
+    HARNESS_IDS, HARNESSES, apply_generic_json, apply_grok, apply_hermes,
+    remove_generic_json, remove_grok, remove_hermes, render, server_spec,
+    validate_all,
+)  # noqa: E402
 from lamf import api, mcp_server, optimizations  # noqa: E402
 from final_test_support import new_instance  # noqa: E402
 
@@ -89,6 +93,42 @@ def main() -> int:
         assert "[mcp_servers.lamf]" in second and "lamf_mcp.py" in second
         assert list(Path(td).glob("config.toml.bak.*"))
         print("PASS grok apply: idempotent managed block + backup + unrelated settings preserved")
+    with tempfile.TemporaryDirectory() as td:
+        config = Path(td) / "mcp.json"
+        apply_generic_json(config, RUNTIME, data, owned_key="lamf-memory", harness_id="gemini")
+        first = json.loads(config.read_text(encoding="utf-8"))
+        apply_generic_json(config, RUNTIME, data, owned_key="lamf-memory", harness_id="gemini")
+        second = json.loads(config.read_text(encoding="utf-8"))
+        assert first == second
+        assert "mcpServers" in second
+        assert "lamf-memory" in second["mcpServers"]
+        assert second["mcpServers"]["lamf-memory"]["env"]["LAMF_HARNESS"] == "gemini"
+        remove_generic_json(config, "lamf-memory")
+        removed = json.loads(config.read_text(encoding="utf-8"))
+        assert "lamf-memory" not in removed.get("mcpServers", {})
+        assert list(Path(td).glob("mcp.json.bak.*"))
+        print("PASS gemini apply/disconnect: JSON mcpServers round trip + backup")
+    with tempfile.TemporaryDirectory() as td:
+        config = Path(td) / "config.toml"
+        config.write_text('model = "grok-test"\n', encoding="utf-8")
+        apply_grok(config, RUNTIME, data)
+        remove_grok(config)
+        final = config.read_text(encoding="utf-8")
+        assert "# BEGIN LAMF MANAGED" not in final
+        assert 'model = "grok-test"' in final
+        assert list(Path(td).glob("config.toml.bak.*"))
+        print("PASS grok disconnect: managed block removed, unrelated settings preserved")
+    with tempfile.TemporaryDirectory() as td:
+        config = Path(td) / "config.yaml"
+        config.write_text("model: test-model\nmcp_servers:\n  existing:\n    command: keep-me\n", encoding="utf-8")
+        apply_hermes(config, RUNTIME, data)
+        remove_hermes(config)
+        final = yaml.safe_load(config.read_text(encoding="utf-8"))
+        assert "lamf" not in final.get("mcp_servers", {})
+        assert final["model"] == "test-model"
+        assert final["mcp_servers"]["existing"]["command"] == "keep-me"
+        assert list(Path(td).glob("config.yaml.bak.*"))
+        print("PASS hermes disconnect: lamf entry removed, unrelated settings preserved")
     print(f"PASS matrix: {len(HARNESS_IDS)} harnesses, one LAMF installation")
     return 0
 

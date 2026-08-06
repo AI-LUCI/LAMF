@@ -35,9 +35,13 @@ def main():
             taint="user_direct")
         spine.append(legacy)  # simulate the historical pre-fix failure exactly
 
-        before = sqlite3.connect(data_dir / "lamf.db").execute(
-            "SELECT COUNT(*) FROM events WHERE id = ?", (legacy["id"],)).fetchone()[0]
-        assert before == 0
+        conn = sqlite3.connect(data_dir / "lamf.db")
+        try:
+            before = conn.execute(
+                "SELECT COUNT(*) FROM events WHERE id = ?", (legacy["id"],)).fetchone()[0]
+            assert before == 0
+        finally:
+            conn.close()
 
         opened = _open_ctx(data_dir)
         try:

@@ -17,7 +17,26 @@ ENV_GLOBAL = "LAMF_OPTIMIZATIONS"
 
 
 def module_root() -> Path:
-    return Path(__file__).resolve().parents[2] / "05_INTEGRATIONS" / "optimizations" / "modules"
+    """Return the directory containing optimization module packages.
+
+    In the installed Windows payload the optimization pack lives at
+    ``<install-dir>/optimizations/optimizations/modules``.  The older
+    ``<install-dir>/optimizations/modules`` layout is preserved for
+    compatibility.  In the source tree ``05_INTEGRATIONS/optimizations/modules``
+    is used as a fallback.
+    """
+    install_dir = Path(__file__).resolve().parents[2]
+    candidates = [
+        install_dir / "optimizations" / "optimizations" / "modules",
+        install_dir / "optimizations" / "modules",
+        install_dir / "05_INTEGRATIONS" / "optimizations" / "modules",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    # Default to the primary payload path when none exist so callers get a
+    # deterministic path for diagnostics/setup even before installation.
+    return candidates[0]
 
 
 def config_path(data_dir: Path) -> Path:
@@ -145,23 +164,23 @@ def set_global(data_dir: Path, enabled: bool) -> dict:
     return status(data_dir)
 
 
-def set_module(data_dir: Path, module_id: str, enabled: bool) -> dict:
-    known = {item["id"] for item in discover()}
+def set_module(data_dir: Path, module_id: str, enabled: bool, root: Path | None = None) -> dict:
+    known = {item["id"] for item in discover(root)}
     if module_id not in known:
         raise ValueError(f"unknown optimization {module_id!r}; expected: {', '.join(sorted(known))}")
     config, _ = load_config(data_dir)
     config.setdefault("modules", {})[module_id] = bool(enabled)
     save_config(data_dir, config)
-    return status(data_dir)
+    return status(data_dir, root)
 
 
-def compiled_instructions(data_dir: Path) -> str:
-    current = status(data_dir)
+def compiled_instructions(data_dir: Path, root: Path | None = None) -> str:
+    current = status(data_dir, root)
     if not current["enabled"] or current["config_error"]:
         return ""
     enabled = {item["id"] for item in current["modules"] if item["enabled"]}
     fragments = []
-    for found in discover():
+    for found in discover(root):
         if found["id"] in enabled and found["manifest"]:
             fragments.append(found["manifest"]["instruction"])
     if not fragments:
