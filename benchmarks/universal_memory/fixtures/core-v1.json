@@ -1,0 +1,22 @@
+{
+  "schema": "umb-fixture-v1",
+  "records": [
+    {"id":"r1","type":"fact","title":"Launcher platforms","body":"The LAMF launcher supports Windows, macOS, and Linux.","tags":["memory-key:launcher-platforms","value:win-mac-linux"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r2","type":"fact","title":"Cross-platform launcher","body":"Windows, Linux, and macOS are supported by the LAMF launcher.","tags":["memory-key:launcher-platforms","value:win-mac-linux"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r3","type":"decision","title":"Merge policy","body":"Never merge an experimental integration until Marcel approves it.","tags":["memory-key:merge-policy","value:approval-required"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r4","type":"decision","title":"Integration approval","body":"Experimental integrations require Marcel's approval before merge.","tags":["memory-key:merge-policy","value:approval-required"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r5","type":"fact","title":"Old benchmark hour","body":"The nightly memory benchmark runs at 3 AM.","tags":["memory-key:benchmark-hour","value:03:00"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r6","type":"fact","title":"Current benchmark hour","body":"The nightly memory benchmark runs at 4 AM.","tags":["memory-key:benchmark-hour","value:04:00"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r7","type":"fact","title":"Other project launcher","body":"The Orion launcher only supports Linux.","tags":["memory-key:launcher-platforms","value:linux-only"],"scope":"project:orion","sensitivity":"ordinary"},
+    {"id":"r8","type":"fact","title":"Sensitive canary","body":"PRIVATE_CANARY_7H2K belongs only in sensitive test memory.","tags":["memory-key:sensitive-canary","value:7h2k"],"scope":"project:lamf","sensitivity":"sensitive"},
+    {"id":"r9","type":"procedure","title":"Memory discovery","body":"Search GitHub, Hacker News, and primary research for memory projects.","tags":["memory-key:discovery-sources","value:primary-sources"],"scope":"project:lamf","sensitivity":"ordinary"},
+    {"id":"r10","type":"procedure","title":"Discovery coverage","body":"Memory discovery checks primary research, GitHub, and Hacker News.","tags":["memory-key:discovery-sources","value:primary-sources"],"scope":"project:lamf","sensitivity":"ordinary"}
+  ],
+  "queries": [
+    {"query":"LAMF launcher Windows macOS Linux","scope":"project:lamf","relevant":["r1","r2"]},
+    {"query":"approval before experimental merge","scope":"project:lamf","relevant":["r3","r4"]},
+    {"query":"nightly benchmark AM","scope":"project:lamf","relevant":["r5","r6"],"must_retain_groups":[["r5"],["r6"]]},
+    {"query":"GitHub Hacker News primary research","scope":"project:lamf","relevant":["r9","r10"]},
+    {"query":"PRIVATE_CANARY_7H2K","scope":"project:lamf","relevant":[],"must_not_return":["r8"]}
+  ]
+}
