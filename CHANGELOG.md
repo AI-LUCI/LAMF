@@ -8,14 +8,6 @@ All notable changes to the LAMF package are documented here. Format follows
 
 ### Added
 
-- Optional self-contained Windows 11 x64 installer (`dist/LAMF-Setup-x64.exe`)
-  with embedded Python runtime, native `lamf.exe` / `lamf-control.exe` /
-  `uninstall.exe` launchers, selectable install/data paths, security profiles,
-  harness integrations (Codex, Claude, Kimi, Gemini, Grok, OpenClaw, Hermes,
-  generic MCP), optimization module selection, and preserved data on uninstall.
-  Verified: 14/14 smoke tests, 141 installer/launcher tests, live Kimi MCP
-  acceptance. Current artifact is unsigned; SmartScreen/AppLocker warnings are
-  expected and a SHA256 checksum is provided for integrity only.
 - Claude Desktop MCPB adapter with cross-platform existing-install discovery,
   explicit Electron stdio proxying, and a live initialization test.
 - Provider-neutral harness registrations and tests for Codex, Claude, Kimi,
