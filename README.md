@@ -56,41 +56,6 @@ Git-aware cloud projects without ever placing the authoritative data directory,
 keys, tokens, spine, review queue or operator notes in Git. No remote is created and
 nothing is pushed automatically.
 
-## Optional Windows 11 installer
-
-A self-contained Windows installer is available at
-[`dist/LAMF-Setup-x64.exe`](dist/LAMF-Setup-x64.exe).
-It bundles the embedded Python runtime, the LAMF application package, native
-`lamf.exe` / `lamf-control.exe` / `uninstall.exe` launchers, and the
-optimization instruction pack, so no prior Python installation is required.
-
-What the installer offers:
-
-- **Windows 11 x64** graphical or silent setup.
-- **Selectable install directory** and **separate private data directory** (the
-  data directory is preserved across reinstalls and uninstalls).
-- **Security profiles**: `locked`, `controlled` (default), `trusted-local`,
-  `open-local`.
-- **Agent harness integrations**: Codex, Claude, Kimi, Gemini, Grok, OpenClaw,
-  Hermes, and a generic MCP-client snippet. Choose none, one, several, or all.
-- **Optimization modules**: select modules during setup and toggle them later
-  with `lamf optimizations status|on|off` and per-module `enable|disable`.
-- **Preserved data on uninstall**: the private memory directory is left intact
-  unless the operator explicitly requests removal.
-
-Verified on this artifact:
-
-- 14/14 smoke tests pass (`runtime/tests/smoke_test.py`).
-- 141 installer/launcher tests pass (`installer/windows/tests/`).
-- Live Kimi MCP acceptance handshake verified.
-
-**SmartScreen notice:** `LAMF-Setup-x64.exe` is currently **unsigned**. Windows
- Defender SmartScreen or enterprise AppLocker may show a warning because the
- publisher is not code-signed. The file is accompanied by
- [`dist/LAMF-Setup-x64.exe.sha256`](dist/LAMF-Setup-x64.exe.sha256) for integrity
- checking; comparing the hash confirms the bytes match, but it is not a substitute
- for code signing.
-
 ## Quickstart — running memory in ~5 minutes
 
 You need: Python 3.10+ (`python3 --version`). Everything else is automatic.
@@ -150,6 +115,7 @@ production-hardened. "Validated" still means exactly one thing: those two suites
 | **Controlled** | Recommended default. Ordinary same-scope recall is automatic; sensitive and cross-scope access stays gated. |
 | **Trusted Local** | Registered local agents share ordinary memory broadly; sensitive categories remain protected. |
 | **Open Local** | No per-access approval inside the registered local trust boundary. Not anonymous, not networked, not secret-capturing. |
+| **AI-Custom** | Operator completes `06_SETUP/AI_CUSTOM_QUESTIONNAIRE.md`; an AI generates a policy validated against `03_CONTRACTS/schemas/security-policy.schema.json` and the invariant floor. |
 
 All profiles are constrained by the unweakenable invariant floor F1–F12
 (`02_SECURITY/SECURITY_PROFILE_OVERVIEW.md`).

@@ -33,18 +33,6 @@ lamf-smoke-*/
 coverage/
 .coverage
 
-# Windows installer build outputs
-installer/windows/build/
-dist/lamf-windows-payload/
-!dist/LAMF-Setup-x64.exe
-!dist/LAMF-Setup-x64.exe.sha256
-
-# Kimi installer/review scratch files
-.kimi-installer-prompt.txt
-.kimi-installer.err.log
-.kimi-installer.out.log
-.kimi-review-followup.txt
-
 # Editor and operating-system files
 .DS_Store
 Thumbs.db
