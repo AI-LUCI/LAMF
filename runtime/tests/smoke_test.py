@@ -19,7 +19,7 @@ any stage fails):
   09 project_all to a tmp vault (frontmatter format, banner, home embeds)
   10 watcher: tamper a governed file -> restore + review-queue copy + audit
   11 export -> fresh dir -> import -> verify_deep
-  12 MCP stdio handshake (initialize -> tools/list = 9 -> memory_search)
+  12 MCP stdio handshake (initialize -> tools/list -> memory_search)
   13 U-08b CHECK probe (sensitive event with inline payload rejected)
   14 deploy-level sensitive memory, recovery, and recall final tests
 """
@@ -670,7 +670,7 @@ def s11(S):
 # 12 — MCP handshake
 # ---------------------------------------------------------------------------
 
-@stage("12 MCP: 9 tools + two independent agents coordinate")
+@stage("12 MCP: tools + independent agents coordinate and expose active work")
 def s12(S):
     driver = textwrap_driver(S)
     env = dict(os.environ)
@@ -733,6 +733,7 @@ def s12(S):
         tools = [t["name"] for t in tool_defs]
         expected = ["memory_search", "memory_get", "memory_remember",
                     "memory_context", "memory_orientation", "memory_handoff",
+                    "memory_activity",
                     "memory_status", "memory_approvals", "memory_export"]
         check(sorted(tools) == sorted(expected),
               f"tools/list mismatch: {tools}")
@@ -799,6 +800,27 @@ def s12(S):
         active_ids = {a.get("agent_id") for a in inbox.get("active_agents", [])}
         check({"codex:proc-a", "claude:proc-b"} <= active_ids,
               f"independent agents did not discover each other: {inbox}")
+
+        activity_a = rpc(proc, lines, {"jsonrpc": "2.0", "id": 14,
+            "method": "tools/call", "params": {"name": "memory_activity",
+            "arguments": {"action": "register",
+                "objective": "Build a universal benchmark for memory systems",
+                "project": "memory-benchmarks",
+                "concepts": ["universal benchmark", "memory systems"],
+                "artifacts": ["contract:memory-benchmark-v1"]}}})
+        check(activity_a.get("activity", {}).get("status") == "active",
+              f"first activity registration failed: {activity_a}")
+        activity_b = rpc(proc_b, lines_b, {"jsonrpc": "2.0", "id": 15,
+            "method": "tools/call", "params": {"name": "memory_activity",
+            "arguments": {"action": "register",
+                "objective": "Create repeatable universal memory benchmarks",
+                "project": "memory-benchmarks",
+                "concepts": ["universal benchmark", "memory systems"],
+                "artifacts": ["contract:memory-benchmark-v1"]}}})
+        check(activity_b.get("overlap") == "high"
+              and activity_b.get("recommended_action") == "pause_and_reconcile"
+              and activity_b.get("user_notice"),
+              f"overlapping active work was not surfaced: {activity_b}")
 
         resource = "file:E:/BRAIN/shared-design.md"
         offer_a = rpc(proc, lines, {"jsonrpc": "2.0", "id": 6,

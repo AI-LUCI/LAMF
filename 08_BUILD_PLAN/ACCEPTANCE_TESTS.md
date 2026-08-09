@@ -375,6 +375,15 @@ retrieval, interfaces, continuity, portability, **P2** = optional Git.
   fencing token and a new accepter takes the handoff, complete/release requests
   carrying the old holder's token are rejected (token + holder mismatch), emit no
   state change, and the rejection is logged.
+- **T-activity-overlap-pause-transfer — active work remains visible and transferable**
+  - Two independent MCP participants register substantially overlapping goals.
+  - The second registration returns high overlap, `pause_and_reconcile`, and a
+    user notice before implementation proceeds.
+  - When the first participant waits for required user input, first observation
+    after 30 minutes changes its card to `paused_waiting_for_user` without hiding it.
+  - Transfer without `user_approved=true` fails; approved transfer preserves the
+    original card and copies its bounded progress/artifact context to the recipient.
+  - Secret-bearing activity metadata is rejected before persistence.
 - **T-capsule-stale-never-served — stale capsule never reaches a consumer**
   (spec: `03_CONTRACTS/state-machines.md`, `04_STORAGE/INDEXING_AND_SEARCH.md`).
   After a record/quarantine change in the scope_set or any `policy_change` (which

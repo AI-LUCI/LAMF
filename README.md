@@ -45,6 +45,12 @@ and `list`) so simultaneous agents can discover one another, announce file owner
 and exchange coordination notes before using the fenced handoff lifecycle. This is a
 durable coordination channel, not an unsafe transcript mirror.
 
+`memory_activity` adds ephemeral intent cards for duplicate-work prevention.
+Agents register substantive goals, detect overlapping active or paused work,
+and recheck before publication. A user-blocking wait pauses after 30 minutes but
+remains visible; transfer requires explicit user approval. Activity cards never
+enter durable memory or the Obsidian projection.
+
 During setup, choose no harness, one, several, or all. Choosing none is supported:
 `lamf search`, `lamf remember`, `lamf context`, the HTTP API and built-in UI continue
 to work without any external agent harness. Automated installs use repeatable

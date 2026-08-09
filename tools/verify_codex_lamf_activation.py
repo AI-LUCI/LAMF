@@ -13,7 +13,7 @@ from pathlib import Path
 
 AUTO_APPROVED_TOOLS = {
     "memory_search", "memory_get", "memory_remember", "memory_context",
-    "memory_orientation", "memory_handoff", "memory_status",
+    "memory_orientation", "memory_handoff", "memory_activity", "memory_status",
 }
 ALL_TOOLS = AUTO_APPROVED_TOOLS | {"memory_approvals", "memory_export"}
 
