@@ -1,0 +1,227 @@
+{
+  "schema": "umb-result-v1",
+  "fixture_sha256": "77e903194a14752b138f29182d4201b9f80fd5fa2cf133deeb5504268869d2b5",
+  "seed": 20260809,
+  "iterations": 250,
+  "k": 5,
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "cpu_count": 24
+  },
+  "baseline": {
+    "adapter": "lamf-baseline",
+    "load_records_per_second": 48.620939965332234,
+    "write_latency_ms": {
+      "p50": 15.661650000000002,
+      "p95": 21.278,
+      "p99": 21.278
+    },
+    "search_latency_ms": {
+      "p50": 0.2888,
+      "p95": 0.3567,
+      "p99": 0.4529
+    },
+    "retrieval": {
+      "recall_at_k": 1.0,
+      "precision_at_k": 1.0,
+      "mrr": 1.0,
+      "ndcg_at_k": 1.0
+    },
+    "context": {
+      "mean_utf8_bytes": 123.6,
+      "mean_token_proxy": 31.2
+    },
+    "governance": {
+      "scope_isolation": true,
+      "sensitive_leakage_rate": 0.0
+    },
+    "fidelity": {
+      "provenance_coverage": 1.0,
+      "false_consolidations": 0,
+      "contradictions_retained": true
+    },
+    "durability": {
+      "equivalent_after_reopen": true
+    },
+    "query_results": [
+      {
+        "query": "LAMF launcher Windows macOS Linux",
+        "relevant": [
+          "r1",
+          "r2"
+        ],
+        "returned_source_ids": [
+          [
+            "r1"
+          ],
+          [
+            "r2"
+          ]
+        ],
+        "utf8_bytes": 157
+      },
+      {
+        "query": "approval before experimental merge",
+        "relevant": [
+          "r3",
+          "r4"
+        ],
+        "returned_source_ids": [
+          [
+            "r4"
+          ],
+          [
+            "r3"
+          ]
+        ],
+        "utf8_bytes": 164
+      },
+      {
+        "query": "nightly benchmark AM",
+        "relevant": [
+          "r5",
+          "r6"
+        ],
+        "returned_source_ids": [
+          [
+            "r5"
+          ],
+          [
+            "r6"
+          ]
+        ],
+        "utf8_bytes": 126
+      },
+      {
+        "query": "GitHub Hacker News primary research",
+        "relevant": [
+          "r10",
+          "r9"
+        ],
+        "returned_source_ids": [
+          [
+            "r10"
+          ],
+          [
+            "r9"
+          ]
+        ],
+        "utf8_bytes": 171
+      },
+      {
+        "query": "PRIVATE_CANARY_7H2K",
+        "relevant": [],
+        "returned_source_ids": [],
+        "utf8_bytes": 0
+      }
+    ]
+  },
+  "candidate": {
+    "adapter": "budgeted-consolidation-v1",
+    "load_records_per_second": 52.273013577809635,
+    "write_latency_ms": {
+      "p50": 16.309,
+      "p95": 19.9409,
+      "p99": 19.9409
+    },
+    "search_latency_ms": {
+      "p50": 0.2924,
+      "p95": 0.3241,
+      "p99": 0.3643
+    },
+    "retrieval": {
+      "recall_at_k": 1.0,
+      "precision_at_k": 1.0,
+      "mrr": 1.0,
+      "ndcg_at_k": 1.0
+    },
+    "context": {
+      "mean_utf8_bytes": 72.2,
+      "mean_token_proxy": 18.4
+    },
+    "governance": {
+      "scope_isolation": true,
+      "sensitive_leakage_rate": 0.0
+    },
+    "fidelity": {
+      "provenance_coverage": 1.0,
+      "false_consolidations": 0,
+      "contradictions_retained": true
+    },
+    "durability": {
+      "equivalent_after_reopen": true
+    },
+    "query_results": [
+      {
+        "query": "LAMF launcher Windows macOS Linux",
+        "relevant": [
+          "r1",
+          "r2"
+        ],
+        "returned_source_ids": [
+          [
+            "r1",
+            "r2"
+          ]
+        ],
+        "utf8_bytes": 72
+      },
+      {
+        "query": "approval before experimental merge",
+        "relevant": [
+          "r3",
+          "r4"
+        ],
+        "returned_source_ids": [
+          [
+            "r3",
+            "r4"
+          ]
+        ],
+        "utf8_bytes": 78
+      },
+      {
+        "query": "nightly benchmark AM",
+        "relevant": [
+          "r5",
+          "r6"
+        ],
+        "returned_source_ids": [
+          [
+            "r5"
+          ],
+          [
+            "r6"
+          ]
+        ],
+        "utf8_bytes": 126
+      },
+      {
+        "query": "GitHub Hacker News primary research",
+        "relevant": [
+          "r10",
+          "r9"
+        ],
+        "returned_source_ids": [
+          [
+            "r10",
+            "r9"
+          ]
+        ],
+        "utf8_bytes": 85
+      },
+      {
+        "query": "PRIVATE_CANARY_7H2K",
+        "relevant": [],
+        "returned_source_ids": [],
+        "utf8_bytes": 0
+      }
+    ]
+  },
+  "comparison": {
+    "context_bytes_change_percent": -41.58576051779935,
+    "p95_latency_change_percent": -9.139332772638076,
+    "quality_preserved": true
+  }
+}
