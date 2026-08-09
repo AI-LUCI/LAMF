@@ -387,6 +387,52 @@ tools:
       reported omission, never disclosed. Acceptance:
       T-handoff-accept-once-fencing, T-handoff-lease-expiry.
 
+  - name: memory_activity
+    capability_class: agent
+    description: >-
+      Ephemeral cross-agent work awareness without durable-memory promotion.
+      Agents register objectives and artifacts, detect similar active or paused
+      work, expose user waits, and transfer ownership only after explicit user
+      approval. Cards never enter memory search or Obsidian projections.
+    policy_evaluation_point: >-
+      before every write — text is sanitized as ordinary operational metadata;
+      transfer requires user_approved=true; cards are local and expire by state.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action: {type: string, enum: [register, update, list, check_overlap, wait, resume, complete, transfer]}
+        activity_id: {type: string, maxLength: 128}
+        recipient_activity_id: {type: string, maxLength: 128}
+        objective: {type: string, minLength: 1, maxLength: 2048}
+        project: {type: string, maxLength: 256}
+        workspace: {type: string, maxLength: 1024}
+        status_reason: {type: string, maxLength: 2048}
+        requested_input: {type: string, maxLength: 2048}
+        concepts: {type: array, items: {type: string, maxLength: 1024}, maxItems: 64}
+        artifacts: {type: array, items: {type: string, maxLength: 1024}, maxItems: 64}
+        progress: {type: object}
+        include_history: {type: boolean, default: false}
+        user_approved: {type: boolean, default: false}
+    output_schema:
+      type: object
+      properties:
+        activity: {type: object}
+        activities: {type: array, items: {type: object}}
+        overlap: {type: string, enum: [none, medium, high]}
+        matches: {type: array, items: {type: object}}
+        recommended_action: {type: string, enum: [continue, coordinate, pause_and_reconcile]}
+        user_notice: {type: string}
+    notes: >-
+      An agent MUST register after understanding a substantive goal and MUST
+      check overlap before implementation and again before push, PR, release, or
+      publication. wait starts a 30-minute user-response timer. After timeout the
+      card becomes paused_waiting_for_user but remains visible. A new overlapping
+      agent must relay user_notice and wait for explicit transfer, collaboration,
+      return-to-original, replacement, or cancellation direction.
+      Acceptance: T-activity-overlap-pause-transfer.
+
   - name: memory_status
     capability_class: agent
     description: >-

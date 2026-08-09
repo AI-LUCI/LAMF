@@ -159,6 +159,7 @@ Transition actions map onto `memory_handoff` input actions — offerer cancel =
 | offered | cancelled | `memory_handoff action=cancel` by offerer while unaccepted | `handoff` (state=cancelled) | canceller = original offerer or operator |
 | offered | expired | offer TTL — **offers expire after 24 h unaccepted** (R3-18) — or sibling handoff for same work item accepted | `handoff` (state=expired) | automatic |
 | accepted | accepted | `memory_handoff action=renew` with current fencing_token (holder renews its 30-min lease) | `handoff` (state=accepted, reason=lease_renewed) | token + holder match; lease deadline extended; fencing token unchanged |
+
 | accepted | completed | `action=complete` with current fencing_token | `handoff` (state=completed) | token match + holder identity match; result metadata recorded |
 | accepted | released | `action=release` with current fencing_token | `handoff` (state=released) | token + holder match; work item may be re-offered as a new handoff |
 | accepted | failed | holder reports failure / crash detected via lease non-renewal + operator disposition | `handoff` (state=failed) | failure metadata event; session not corrupted |
@@ -171,7 +172,34 @@ T-handoff-sibling-auto-expiry, T-handoff-stale-fencing-rejected.
 
 ---
 
-## 5. Capsule machine
+## 5. Ephemeral activity cards
+
+Activity cards prevent duplicate work across LAMF-connected agents without
+becoming durable memory or a task orchestrator. Transitions are evaluated
+lazily and atomically whenever `memory_activity` is called.
+
+| From | To | Trigger | Guard |
+|---|---|---|---|
+| — | active | `register` | objective required; ordinary sanitizer passes |
+| active | active | `update` or idempotent `register` | owning agent |
+| active | waiting_for_user | `wait` | requested_input required |
+| waiting_for_user | active | `resume` | owning agent; user returned |
+| waiting_for_user | paused_waiting_for_user | first observation at least 30 minutes after wait | automatic; card remains visible |
+| active | inactive_disconnected | first observation after participant heartbeat is stale | automatic; card remains visible |
+| paused/inactive | transferred | `transfer` | `user_approved=true` and recipient activity exists |
+| visible | completed | `complete` | owning agent |
+
+Register and `check_overlap` compare normalized objectives, concepts, projects,
+and exact artifact identifiers. High overlap returns `pause_and_reconcile` plus
+a user notice. Transfers preserve the source card and copy a bounded handoff
+context into the recipient card. Activity files are operational state excluded
+from memory search, export bundles, and Obsidian projection.
+
+**Acceptance test:** T-activity-overlap-pause-transfer.
+
+---
+
+## 6. Capsule machine
 
 Compiled context capsule (`memory_context`, `memory_orientation`). A capsule is
 valid ONLY for its key `(policy_version, scope_set, record_watermark)` (§J).
@@ -227,7 +255,7 @@ T-capsule-omission-reported, T-capsule-restricted-excluded, T-capsule-p95.
 
 ---
 
-## 6. Identity-merge machine
+## 7. Identity-merge machine
 
 Cross-channel identity merge (e.g. same human on two channels). Automatic
 merging is FORBIDDEN in every profile (F6); group channels resolve at channel
@@ -258,7 +286,7 @@ T-group-channel-scope.
 
 ---
 
-## 7. Import machine (staged → active)
+## 8. Import machine (staged → active)
 
 Portable-bundle import (`DECISIONS.md` §M). Import is ALWAYS staged; activation
 is a separate, atomic step. Rebind/re-encrypt precedes activation. Indexes and

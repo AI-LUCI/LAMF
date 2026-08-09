@@ -1105,6 +1105,10 @@ class _Handler(BaseHTTPRequestHandler):
                 body = self._read_body(MAX_BODY)
                 from . import mcp_server
                 return self._send_json(200, mcp_server.handoff(self.ctx, body))
+            if path == "/v1/activities":
+                body = self._read_body(MAX_BODY)
+                from . import mcp_server
+                return self._send_json(200, mcp_server.activity(self.ctx, body))
             m = re.fullmatch(r"/v1/approvals/([^/]+)", path)
             if m:
                 body = self._read_body(MAX_BODY)

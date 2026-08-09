@@ -383,6 +383,42 @@ paths:
         "401": {$ref: "#/components/responses/Unauthenticated"}
         "403": {$ref: "#/components/responses/Forbidden"}
 
+  /v1/activities:
+    post:
+      tags: [memory]
+      summary: Ephemeral active-work awareness (REST twin of memory_activity)
+      operationId: postActivity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: {type: string, enum: [register, update, list, check_overlap, wait, resume, complete, transfer]}
+                activity_id: {type: string, maxLength: 128}
+                recipient_activity_id: {type: string, maxLength: 128}
+                objective: {type: string, maxLength: 2048}
+                project: {type: string, maxLength: 256}
+                workspace: {type: string, maxLength: 1024}
+                status_reason: {type: string, maxLength: 2048}
+                requested_input: {type: string, maxLength: 2048}
+                concepts: {type: array, items: {type: string}, maxItems: 64}
+                artifacts: {type: array, items: {type: string}, maxItems: 64}
+                progress: {type: object}
+                include_history: {type: boolean, default: false}
+                user_approved: {type: boolean, default: false}
+      responses:
+        "200":
+          description: Activity card, visible work, or overlap decision
+          content:
+            application/json:
+              schema: {type: object}
+        "401": {$ref: "#/components/responses/Unauthenticated"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
   /v1/status:
     get:
       tags: [meta]
