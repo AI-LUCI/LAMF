@@ -412,6 +412,18 @@ def check_vectors(root: Path):
 
 
 # ---------------------------------------------------------------- check 5
+def manifest_digest(path: Path) -> str:
+    """Hash portable content while ignoring checkout-specific text EOLs."""
+    data = path.read_bytes()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        portable = data
+    else:
+        portable = text.replace("\r\n", "\n").encode("utf-8")
+    return hashlib.sha256(portable).hexdigest()
+
+
 def check_manifest(root: Path):
     print("check 5: MANIFEST.sha256")
     mpath = root / "MANIFEST.sha256"
@@ -432,7 +444,7 @@ def check_manifest(root: Path):
         if not p.exists():
             fail(5, f"manifest entry missing on disk: {rel}")
             continue
-        actual = hashlib.sha256(p.read_bytes()).hexdigest()
+        actual = manifest_digest(p)
         if actual != digest:
             fail(5, f"hash mismatch: {rel}")
     # Manifest paths are portable and always use forward slashes.  Path.__str__
@@ -475,7 +487,7 @@ def write_manifest(root: Path):
         and p.relative_to(root).as_posix()
         != "05_INTEGRATIONS/optimizations/overlay/LamfOptimizationControls.exe"
     )
-    lines = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  "
+    lines = [f"{manifest_digest(p)}  "
              f"{p.relative_to(root).as_posix()}" for p in paths]
     (root / "MANIFEST.sha256").write_text("\n".join(lines) + "\n",
                                            encoding="utf-8")
