@@ -45,6 +45,8 @@ def main() -> None:
     require(command.is_file(), f"MCP command does not exist: {command}")
     require(launch_args and Path(launch_args[0]).is_file(),
             "LAMF MCP entry point is missing")
+    cwd = Path(server.get("cwd", ""))
+    require(cwd.is_dir(), f"LAMF MCP working directory is missing: {cwd}")
     data_dir = Path(server.get("env", {}).get("LAMF_DATA_DIR", ""))
     require((data_dir / "lamf.db").is_file(),
             f"LAMF data directory is not initialized: {data_dir}")
@@ -85,12 +87,15 @@ def main() -> None:
     ]
     proc = subprocess.run(
         [str(command), *launch_args],
-        input="\n".join(json.dumps(item) for item in requests) + "\n",
-        text=True, encoding="utf-8", capture_output=True, env=env, timeout=30)
+        input=("\n".join(json.dumps(item) for item in requests) + "\n").encode("utf-8"),
+        capture_output=True, env=env,
+        cwd=str(cwd), timeout=30)
     require(proc.returncode == 0,
-            f"LAMF MCP handshake failed: {proc.stderr.strip()[:500]}")
+            "LAMF MCP handshake failed: "
+            + proc.stderr.decode("utf-8", errors="replace").strip()[:500])
+    output = proc.stdout.decode("utf-8", errors="replace")
     replies = {item["id"]: item for item in
-               (json.loads(line) for line in proc.stdout.splitlines())
+               (json.loads(line) for line in output.splitlines())
                if item.get("id") is not None}
     require(set(replies) == {1, 2}, f"incomplete MCP replies: {sorted(replies)}")
 

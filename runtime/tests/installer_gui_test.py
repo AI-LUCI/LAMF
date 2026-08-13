@@ -74,8 +74,15 @@ def make_fake_payload(root: Path) -> Path:
     (root / "runtime" / "requirements.txt").write_text("pyyaml\n", encoding="utf-8")
     (root / "runtime" / ".venv" / "Scripts").mkdir(parents=True)
     (root / "runtime" / ".venv" / "Scripts" / "python.exe").write_bytes(b"MZ")
-    (root / "05_INTEGRATIONS").mkdir()
+    (root / "02_SECURITY" / "profiles").mkdir(parents=True)
+    (root / "02_SECURITY" / "profiles" / "controlled.yaml").write_text("profile: controlled\n", encoding="utf-8")
+    (root / "03_CONTRACTS" / "schemas").mkdir(parents=True)
+    (root / "03_CONTRACTS" / "schemas" / "security-policy.schema.json").write_text("{}\n", encoding="utf-8")
+    (root / "04_STORAGE").mkdir()
+    (root / "04_STORAGE" / "SCHEMA.sql").write_text("-- schema\n", encoding="utf-8")
+    (root / "05_INTEGRATIONS" / "codex").mkdir(parents=True)
     (root / "05_INTEGRATIONS" / "README.md").write_text("x\n", encoding="utf-8")
+    (root / "05_INTEGRATIONS" / "codex" / "AGENTS.md").write_text("# LAMF\n", encoding="utf-8")
     (root / "VERSION").write_text("2.0.0\n", encoding="utf-8")
     return root
 

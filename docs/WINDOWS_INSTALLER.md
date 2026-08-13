@@ -15,6 +15,23 @@ installation decision still belongs to `installer/install.py`.
 | `installer/Build-LAMF-Exe.ps1` | isolated build venv, tests, build, PE subsystem check |
 | `runtime/tests/installer_gui_test.py` | packaging contract + end-to-end path guarantees |
 
+## Codex Desktop activation
+
+When **OpenAI Codex** is selected, the installer writes a complete, required
+`lamf-memory` MCP registration with the permanent runtime `cwd`, preserves
+unrelated `config.toml` content, and makes a timestamped backup. It also
+installs profile-level startup guidance sourced from
+`05_INTEGRATIONS/codex/AGENTS.md` and the `lamf-memory`
+skill, so changing the signed-in Codex account does not remove activation.
+
+Before setup can pass, the installer launches the installed MCP server from
+an unrelated directory and requires successful initialize and tools-list
+responses. The executable carries the checksum-verified LAMF Optimizations
+v1.0.0 pack and enables every valid released module by default.
+
+Fully quit and reopen Codex Desktop once after setup. A newly created task
+should expose the LAMF memory tools immediately.
+
 ## Building
 
 ```powershell

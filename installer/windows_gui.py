@@ -63,7 +63,11 @@ PAYLOAD_DIR_NAME = "payload"
 PAYLOAD_ITEMS = (
     "installer",
     "runtime",
+    "02_SECURITY",
+    "03_CONTRACTS",
+    "04_STORAGE",
     "05_INTEGRATIONS",
+    "vendor",
     "VERSION",
     "LICENSE",
     "README.md",
@@ -309,6 +313,10 @@ def _assert_staged(dest: Path) -> None:
         dest / "installer" / "install.py",
         dest / "runtime" / "lamf" / "cli.py",
         dest / "runtime" / "requirements.txt",
+        dest / "02_SECURITY" / "profiles" / "controlled.yaml",
+        dest / "03_CONTRACTS" / "schemas" / "security-policy.schema.json",
+        dest / "04_STORAGE" / "SCHEMA.sql",
+        dest / "05_INTEGRATIONS" / "codex" / "AGENTS.md",
     )
     missing = [str(p) for p in required if not p.is_file()]
     if missing:

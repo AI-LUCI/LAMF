@@ -50,6 +50,21 @@ def main() -> int:
     # --- Data/Git boundary: refuse an authority directory inside a checkout ---
     assert installer.parse_args([]).allow_git_data_dir is False
     assert installer.parse_args(["--allow-git-data-dir"]).allow_git_data_dir is True
+    assert installer.parse_args([]).no_optimizations is False
+    assert installer.parse_args(["--no-optimizations"]).no_optimizations is True
+    with tempfile.TemporaryDirectory() as td:
+        codex_home = Path(td) / ".codex"
+        codex_home.mkdir()
+        agents = codex_home / "AGENTS.md"
+        agents.write_text("# Existing company guidance\n", encoding="utf-8")
+        ui = installer.UI()
+        first = installer.install_codex_startup(ui, codex_home)
+        installer.install_codex_startup(ui, codex_home)
+        guidance = agents.read_text(encoding="utf-8")
+        assert "# Existing company guidance" in guidance
+        assert guidance.count("<!-- BEGIN LAMF MANAGED -->") == 1
+        assert "memory_orientation" in guidance and "memory_search" in guidance
+        assert "name: lamf-memory" in first["skill"].read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as td:
         root = Path(td).resolve()
         checkout = root / "repo"
@@ -97,6 +112,7 @@ def main() -> int:
     print("PASS Git scope: projection-only repository; authority and secrets excluded")
     print("PASS data/Git boundary: authority refused inside a checkout, pre-mutation")
     print("PASS --no-start doctor: stopped server warns instead of failing")
+    print("PASS Codex startup: profile guidance and skill are idempotent and account-independent")
     return 0
 
 

@@ -34,7 +34,11 @@ PAYLOAD_DIR_NAME = "payload"
 PAYLOAD_ITEMS = (
     "installer",
     "runtime",
+    "02_SECURITY",
+    "03_CONTRACTS",
+    "04_STORAGE",
     "05_INTEGRATIONS",
+    "vendor",
     "VERSION",
     "LICENSE",
     "README.md",

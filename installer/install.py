@@ -98,12 +98,14 @@ if __name__ == "__main__":
 # Now the full stdlib import set is safe.
 # ---------------------------------------------------------------------------
 import argparse
+import hashlib
 import json
 import platform
 import stat
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -115,6 +117,13 @@ DEFAULT_VAULT = "~/LAMF Vault"
 DEFAULT_PROFILE = "controlled"
 PROFILES = ("locked", "controlled", "trusted-local", "open-local")
 HARNESSES = ("codex", "claude", "kimi", "gemini", "grok", "openclaw", "hermes", "generic")
+OPTIMIZATION_PACK_VERSION = "1.0.0"
+OPTIMIZATION_PACK_NAME = f"LAMF-Optimizations-{OPTIMIZATION_PACK_VERSION}.zip"
+OPTIMIZATION_PACK_SHA256 = "f9ef9b1f199b7d995c9f2ab27da0214e865b680e64afadc66093057f55fcdebd"
+OPTIMIZATION_PACK_URL = (
+    "https://github.com/AI-LUCI/LAMF-Optimizations/releases/download/"
+    f"v{OPTIMIZATION_PACK_VERSION}/{OPTIMIZATION_PACK_NAME}"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -631,6 +640,9 @@ def apply_harness_registrations(ui: UI, data_dir: Path,
         target = h.default_config_path(hid)
         try:
             res = h.apply(hid, runtime_dir(), data_dir, target)
+            if hid == "codex":
+                install_codex_startup(ui)
+                verify_codex_activation(runtime_dir(), data_dir)
             results[hid] = "applied"
             ui.ok(f"{hid}: merged into {res['config']}"
                   + (f" (backup: {res['backup']})" if res.get("backup") else ""))
@@ -640,6 +652,113 @@ def apply_harness_registrations(ui: UI, data_dir: Path,
                     f"The portable snippet is in {data_dir / 'adapters'}; "
                     f"or run: lamf harness apply {hid}")
     return results
+
+
+def install_codex_startup(ui: UI, codex_home: Path | None = None) -> dict[str, Path]:
+    """Install profile-level startup guidance independent of the signed-in account."""
+    home = Path(codex_home or (Path.home() / ".codex"))
+    source = package_root() / "05_INTEGRATIONS" / "codex"
+    agents_source = (source / "AGENTS.md").read_text(encoding="utf-8").strip()
+    skill_source = source / "skill" / "SKILL.md"
+    begin, end = "<!-- BEGIN LAMF MANAGED -->", "<!-- END LAMF MANAGED -->"
+    agents = home / "AGENTS.md"
+    old = agents.read_text(encoding="utf-8") if agents.exists() else ""
+    if old.count(begin) != old.count(end) or old.count(begin) > 1:
+        raise ValueError(f"malformed LAMF managed guidance in {agents}")
+    block = f"{begin}\n{agents_source}\n{end}"
+    if begin in old:
+        prefix, rest = old.split(begin, 1)
+        _, suffix = rest.split(end, 1)
+        updated = prefix.rstrip() + ("\n\n" if prefix.strip() else "") + block + suffix
+    else:
+        updated = old.rstrip() + ("\n\n" if old.strip() else "") + block + "\n"
+    if agents.exists() and old != updated:
+        backup_file(ui, agents)
+    _atomic_text_write(agents, updated)
+    skill = home / "skills" / "lamf-memory" / "SKILL.md"
+    if skill.exists() and skill.read_bytes() != skill_source.read_bytes():
+        backup_file(ui, skill)
+    skill.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(skill_source, skill)
+    ui.ok(f"Codex startup guidance installed for this Windows profile: {agents}")
+    return {"agents": agents, "skill": skill}
+
+
+def _atomic_text_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def verify_codex_activation(runtime: Path, data_dir: Path) -> None:
+    """Prove the installed registration works from an unrelated directory."""
+    sys.path.insert(0, str(runtime))
+    from lamf.harness import server_spec
+    spec = server_spec(runtime, data_dir, "codex")
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-03-26", "capabilities": {},
+            "clientInfo": {"name": "lamf-installer-verifier", "version": VERSION}}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    ]
+    env = os.environ.copy()
+    env.update({str(k): str(v) for k, v in spec["env"].items()})
+    proc = subprocess.run(
+        [spec["command"], *spec["args"]],
+        input=("\n".join(json.dumps(item) for item in requests) + "\n").encode("utf-8"),
+        capture_output=True, env=env,
+        cwd=spec["cwd"], timeout=30,
+    )
+    if proc.returncode != 0:
+        error = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Codex MCP startup failed: {error[:400]}")
+    output = proc.stdout.decode("utf-8", errors="replace")
+    replies = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+    tools = next((r for r in replies if r.get("id") == 2), {}).get("result", {}).get("tools", [])
+    names = {item.get("name") for item in tools}
+    required = {"memory_orientation", "memory_search", "memory_remember", "memory_status"}
+    if not required <= names:
+        raise RuntimeError(f"Codex MCP tool list incomplete: {sorted(names)}")
+
+
+def install_optimization_pack(ui: UI, data_dir: Path) -> dict:
+    """Install the pinned, checksum-verified optimization pack and enable it."""
+    bundled = package_root() / "vendor" / OPTIMIZATION_PACK_NAME
+    archive = bundled
+    if not archive.is_file():
+        cache = Path(data_dir) / "run" / OPTIMIZATION_PACK_NAME
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        ui.info(f"Downloading LAMF Optimizations v{OPTIMIZATION_PACK_VERSION}...")
+        urllib.request.urlretrieve(OPTIMIZATION_PACK_URL, cache)
+        archive = cache
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if digest != OPTIMIZATION_PACK_SHA256:
+        raise RuntimeError("LAMF optimization pack checksum mismatch; refusing to install it")
+    target = package_root() / "optimizations"
+    with zipfile.ZipFile(archive) as zf:
+        members = [m for m in zf.infolist()
+                   if m.filename.startswith("optimizations/") and not m.is_dir()]
+        if not members:
+            raise RuntimeError("LAMF optimization pack contains no modules")
+        for member in members:
+            rel = Path(member.filename).relative_to("optimizations")
+            destination = (target / rel).resolve()
+            if target.resolve() not in destination.parents:
+                raise RuntimeError(f"unsafe optimization archive member: {member.filename}")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, destination.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+    sys.path.insert(0, str(runtime_dir()))
+    from lamf import optimizations
+    optimizations.initialize(data_dir)
+    status = optimizations.status(data_dir)
+    valid = [m for m in status["modules"] if not m.get("error")]
+    if not valid or not status["enabled"]:
+        raise RuntimeError("LAMF optimizations installed but no valid enabled modules were found")
+    ui.ok(f"Full optimization pack enabled: {len(valid)} modules")
+    return status
 
 
 def choose_harnesses(requested: list[str] | None, *, interactive: bool) -> tuple[str, ...]:
@@ -1143,6 +1262,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="optionally initialize the Obsidian projection as a local Git repo")
     p.add_argument("--no-start", action="store_true",
                    help="do not start the LAMF server at the end")
+    p.add_argument("--no-optimizations", action="store_true",
+                   help="do not install the pinned LAMF optimization pack")
     p.add_argument("--allow-git-data-dir", action="store_true",
                    help="UNSAFE: permit a data directory inside a Git checkout "
                         "(refused by default so keys/tokens/events cannot be committed)")
@@ -1252,7 +1373,7 @@ def main(argv: list[str]) -> int:
     print("  this computer. You can re-run this installer any time — it only")
     print("  fixes what is missing; it never deletes your memories.")
 
-    total = 8
+    total = 9
     ui.step(1, total, "Checking this computer")
     step_environment(ui)
 
@@ -1280,10 +1401,22 @@ def main(argv: list[str]) -> int:
         vault.mkdir(parents=True, exist_ok=True)
         ui.info("Vault folder created; the first projection happens after init succeeds.")
 
-    ui.step(6, total, "Start/stop helper scripts + starting the server")
+    ui.step(6, total, "Agent optimization pack")
+    optimization_ok = True
+    if args.no_optimizations:
+        ui.info("--no-optimizations given; using core LAMF without optional modules.")
+    elif init_ok:
+        try:
+            install_optimization_pack(ui, data_dir)
+        except Exception as exc:
+            optimization_ok = False
+            ui.fail(f"Could not install the optimization pack: {exc}",
+                    fix="check internet access and re-run this installer")
+
+    ui.step(7, total, "Start/stop helper scripts + starting the server")
     helpers = write_helper_scripts(ui, data_dir, vault)
     write_harness_registrations(ui, data_dir, harnesses)
-    apply_harness_registrations(ui, data_dir, harnesses)
+    harness_results = apply_harness_registrations(ui, data_dir, harnesses)
     if vault is not None:
         setup_git_vault(ui, vault, git_mode)
     if init_ok:
@@ -1291,13 +1424,19 @@ def main(argv: list[str]) -> int:
     else:
         ui.info("Server start deferred until init succeeds (re-run me).")
 
-    ui.step(7, total, "Selected harness registration")
+    ui.step(8, total, "Selected harness registration")
     use_openclaw = "openclaw" in harnesses and not args.no_openclaw
     openclaw_state = step_openclaw(ui, data_dir, not use_openclaw, vault=vault)
 
-    ui.step(8, total, "Doctor — checking that everything is healthy")
+    ui.step(9, total, "Doctor — checking that everything is healthy")
     doctor = run_doctor(ui, data_dir, vault, openclaw_state,
                         server_expected=not args.no_start)
+    doctor.check(all(state != "failed" for state in harness_results.values()),
+                 "Selected agent registrations start successfully",
+                 fix="close the affected agent, then re-run this installer")
+    doctor.check(optimization_ok, "Optimization pack installed and enabled",
+                 fix="check internet access and re-run this installer",
+                 warn_only=args.no_optimizations)
 
     finish_card(ui, vault, openclaw_state, doctor, data_dir,
                 server_running=server_up())

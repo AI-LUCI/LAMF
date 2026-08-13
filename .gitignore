@@ -20,11 +20,15 @@ logs/
 .venv/
 venv/
 __pycache__/
+vendor/LAMF-Optimizations-*.zip
 *.py[cod]
 node_modules/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+/build/
+/pip/
+/dist/LAMF.exe
 /05_INTEGRATIONS/optimizations/overlay/*.exe
 
 # Local validation artifacts

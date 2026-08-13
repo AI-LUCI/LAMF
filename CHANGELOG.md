@@ -6,6 +6,18 @@ All notable changes to the LAMF package are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the Windows installer’s Codex Desktop registration: it now uses the
+  stable `lamf-memory` server name, sets the permanent runtime working
+  directory, requires startup, keeps operator-only tools approval-gated, and
+  pre-approves normal memory operations.
+- The installer now places account-independent LAMF startup guidance and the
+  `lamf-memory` skill in the current OS profile, then performs a real MCP
+  initialize/tools-list handshake before reporting success.
+- Windows builds now bundle the checksum-pinned LAMF Optimizations v1.0.0
+  release and enable every valid released module by default.
+
 ### Added
 
 - Claude Desktop MCPB adapter with cross-platform existing-install discovery,

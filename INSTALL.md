@@ -4,6 +4,12 @@ This guide installs LAMF from a clean source checkout while keeping the running 
 
 ## Windows: the optional one-click installer beta (`LAMF-beta.exe`)
 
+Selecting Codex is a complete activation: the GUI installs profile startup
+guidance and the skill, writes a required MCP registration anchored to the
+permanent runtime directory, performs a live handshake, and enables the full
+released optimization pack. Fully quit and reopen Codex Desktop once after
+installation.
+
 If you have `LAMF-beta.exe`, double-click it and skip the rest of this guide. It is a
 single windowed executable — no console, no unpacking, nothing to install first
 except Python 3.10+ (the installer detects it and shows you the one command that

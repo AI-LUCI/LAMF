@@ -91,6 +91,7 @@ def server_spec(runtime_dir: Path, data_dir: Path, harness_id: str | None = None
         return {
             "command": str(install_dir / "lamf.exe"),
             "args": ["mcp", "--harness", harness_id],
+            "cwd": str(install_dir),
             "env": {"LAMF_DATA_DIR": str(data_dir),
                     "LAMF_HARNESS": harness_id},
         }
@@ -98,6 +99,7 @@ def server_spec(runtime_dir: Path, data_dir: Path, harness_id: str | None = None
     return {
         "command": str(python),
         "args": [str(runtime_dir / "lamf_mcp.py")],
+        "cwd": str(runtime_dir),
         "env": {"LAMF_DATA_DIR": str(data_dir),
                 "LAMF_HARNESS": harness_id},
     }
@@ -111,11 +113,37 @@ def render(harness_id: str, runtime_dir: Path, data_dir: Path) -> str:
     args = spec["args"]
     env = spec["env"]
     args_json = ", ".join(json.dumps(a) for a in args)
-    if harness_id in ("codex", "grok"):
+    if harness_id == "codex":
+        safe_tools = (
+            "memory_search", "memory_get", "memory_remember", "memory_context",
+            "memory_orientation", "memory_handoff", "memory_status",
+        )
+        tool_blocks = "".join(
+            f'\n[mcp_servers.lamf-memory.tools.{name}]\napproval_mode = "approve"\n'
+            for name in safe_tools
+        )
+        return (
+            '[mcp_servers.lamf-memory]\n'
+            f'command = {json.dumps(command)}\n'
+            f'args = [{args_json}]\n'
+            f'cwd = {json.dumps(spec["cwd"])}\n'
+            'enabled = true\n'
+            'required = true\n'
+            'default_tools_approval_mode = "prompt"\n'
+            'startup_timeout_sec = 30\n'
+            'tool_timeout_sec = 30\n'
+            f'{tool_blocks}\n'
+            '[mcp_servers.lamf-memory.env]\n'
+            f'LAMF_DATA_DIR = {json.dumps(env["LAMF_DATA_DIR"])}\n'
+            f'LAMF_HARNESS = {json.dumps(env["LAMF_HARNESS"])}\n'
+            'PYTHONUTF8 = "1"\n'
+        )
+    if harness_id == "grok":
         return (
             '[mcp_servers.lamf]\n'
             f'command = {json.dumps(command)}\n'
             f'args = [{args_json}]\n'
+            f'cwd = {json.dumps(spec["cwd"])}\n'
             f'env = {{ LAMF_DATA_DIR = {json.dumps(env["LAMF_DATA_DIR"])}, '
             f'LAMF_HARNESS = {json.dumps(env["LAMF_HARNESS"])} }}\n'
             'startup_timeout_sec = 30\n'
@@ -129,7 +157,7 @@ def render(harness_id: str, runtime_dir: Path, data_dir: Path) -> str:
             f'      LAMF_DATA_DIR: {json.dumps(env["LAMF_DATA_DIR"])}\n'
             f'      LAMF_HARNESS: {json.dumps(env["LAMF_HARNESS"])}\n'
         )
-    entry = {"command": command, "args": list(args), "env": env}
+    entry = {"command": command, "args": list(args), "cwd": spec["cwd"], "env": env}
     if harness_id == "openclaw":
         return json.dumps({"mcp": {"servers": {"lamf-memory": {**entry, "transport": "stdio", "enabled": True}}}}, indent=2)
     return json.dumps({"mcpServers": {"lamf-memory": entry}}, indent=2)
@@ -169,7 +197,7 @@ def _apply_toml_block(config_path: Path, runtime_dir: Path, data_dir: Path,
     """Idempotently maintain an owned LAMF block in a TOML config.
 
     Shared by Grok and Codex, which both use ``~/.<tool>/config.toml`` with an
-    ``[mcp_servers.lamf]`` table. The managed block is delimited so unrelated
+    managed MCP table. The managed block is delimited so unrelated
     settings are preserved verbatim and re-runs are idempotent.
     """
     config_path = Path(config_path).expanduser()
@@ -194,7 +222,8 @@ def _apply_toml_block(config_path: Path, runtime_dir: Path, data_dir: Path,
     tmp.write_text(new, encoding="utf-8")
     os.replace(tmp, config_path)
     return {"config": str(config_path), "backup": str(backup) if backup else None,
-            "server": "lamf", "changed": old != new}
+            "server": "lamf-memory" if harness_id == "codex" else "lamf",
+            "changed": old != new}
 
 
 def apply_grok(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
@@ -386,7 +415,7 @@ def validate_all(runtime_dir: Path, data_dir: Path) -> list[str]:
     errors = []
     for hid in HARNESS_IDS:
         text = render(hid, runtime_dir, data_dir)
-        server_marker = "lamf:" if hid == "hermes" else ("mcp_servers.lamf" if hid in ("codex", "grok") else "lamf-memory")
+        server_marker = "lamf:" if hid == "hermes" else ("mcp_servers.lamf" if hid == "grok" else "lamf-memory")
         if (server_marker not in text or "lamf_mcp.py" not in text
                 or "LAMF_DATA_DIR" not in text or "LAMF_HARNESS" not in text):
             errors.append(f"{hid}: incomplete generated registration")

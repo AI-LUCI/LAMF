@@ -58,6 +58,11 @@ nothing is pushed automatically.
 
 ## Quickstart — running memory in ~5 minutes
 
+On Windows, selecting Codex in the GUI performs and verifies the entire
+activation path—MCP registration, permanent working directory, profile startup
+guidance, skill installation, and the full released optimization pack. A clean
+Codex Desktop installation needs one full restart after setup.
+
 You need: Python 3.10+ (`python3 --version`). Everything else is automatic.
 
 ```bash

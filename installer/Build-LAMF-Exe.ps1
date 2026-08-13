@@ -48,6 +48,11 @@ $WorkDir      = Join-Path $Root 'build'
 if (-not $BuildVenv) { $BuildVenv = Join-Path $WorkDir '.pyinstaller-venv' }
 if (-not $OutputDir) { $OutputDir = Join-Path $Root 'dist' }
 $ExePath      = Join-Path $OutputDir 'LAMF.exe'
+$OptimizationVersion = '1.0.0'
+$OptimizationName = "LAMF-Optimizations-$OptimizationVersion.zip"
+$OptimizationSha256 = 'f9ef9b1f199b7d995c9f2ab27da0214e865b680e64afadc66093057f55fcdebd'
+$VendorDir = Join-Path $Root 'vendor'
+$OptimizationArchive = Join-Path $VendorDir $OptimizationName
 
 function Write-Step($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cyan }
 function Write-Ok($text)   { Write-Host "    [OK]   $text" -ForegroundColor Green }
@@ -99,6 +104,23 @@ if ($LASTEXITCODE -ne 0) {
     Fail "This Python has no tkinter. Reinstall it with the 'tcl/tk and IDLE' option enabled."
 }
 Write-Ok "tkinter is available"
+
+# Bundle the separately released optimization pack so a clean-machine install
+# does not depend on a second download. The pinned release digest is verified
+# before PyInstaller is allowed to consume it.
+Write-Step "Preparing pinned LAMF optimization pack"
+New-Item -ItemType Directory -Force $VendorDir | Out-Null
+if (-not (Test-Path $OptimizationArchive) -or
+    (Get-FileHash $OptimizationArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $OptimizationSha256) {
+    $optimizationUrl = "https://github.com/AI-LUCI/LAMF-Optimizations/releases/download/v$OptimizationVersion/$OptimizationName"
+    Write-Info "downloading $optimizationUrl"
+    Invoke-WebRequest -Uri $optimizationUrl -OutFile $OptimizationArchive
+}
+$optimizationHash = (Get-FileHash $OptimizationArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($optimizationHash -ne $OptimizationSha256) {
+    Fail "optimization pack checksum mismatch (got $optimizationHash)"
+}
+Write-Ok "$OptimizationName verified"
 
 # --------------------------------------------------------------------------
 # 2. Optional clean
