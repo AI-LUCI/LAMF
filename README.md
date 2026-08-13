@@ -68,6 +68,21 @@ bash installer/install.sh
 powershell -ExecutionPolicy Bypass -File installer/Install-LAMF.ps1
 ```
 
+### Optional Windows GUI installer (beta)
+
+Windows users may instead download and double-click
+[`dist/LAMF-beta.exe`](dist/LAMF-beta.exe). This **beta** installer provides a
+graphical setup flow with independent selections for Codex, Claude, Kimi,
+Gemini, Grok, OpenClaw, Hermes, and Generic MCP. It still requires Python 3.10+
+and uses the same tested `installer/install.py` core as the PowerShell method.
+
+The beta executable is currently unsigned, so Windows SmartScreen or enterprise
+policy may warn or block it. Verify the download against
+[`dist/LAMF-beta.exe.sha256`](dist/LAMF-beta.exe.sha256). A matching checksum
+confirms file integrity, but is not publisher authentication or code signing.
+The implementation, limitations, and reproducible build command are documented
+in [docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md).
+
 The installer is safe to re-run. It builds the Python environment, initializes the
 private authority at `~/LAMF`, shows the operator token once, starts the built-in
 LAMF workspace, and configures selected harnesses. Obsidian is an explicit optional

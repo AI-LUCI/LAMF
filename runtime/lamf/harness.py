@@ -164,8 +164,14 @@ def apply_hermes(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
             "server": "lamf", "changed": True}
 
 
-def apply_grok(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
-    """Idempotently maintain an owned LAMF block in Grok's TOML config."""
+def _apply_toml_block(config_path: Path, runtime_dir: Path, data_dir: Path,
+                      harness_id: str) -> dict:
+    """Idempotently maintain an owned LAMF block in a TOML config.
+
+    Shared by Grok and Codex, which both use ``~/.<tool>/config.toml`` with an
+    ``[mcp_servers.lamf]`` table. The managed block is delimited so unrelated
+    settings are preserved verbatim and re-runs are idempotent.
+    """
     config_path = Path(config_path).expanduser()
     config_path.parent.mkdir(parents=True, exist_ok=True)
     begin, end = "# BEGIN LAMF MANAGED", "# END LAMF MANAGED"
@@ -176,11 +182,12 @@ def apply_grok(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
     if config_path.exists():
         backup = config_path.with_name(f"{config_path.name}.bak.{int(time.time())}")
         shutil.copy2(config_path, backup)
-    block = f"{begin}\n{render('grok', runtime_dir, data_dir).rstrip()}\n{end}"
+    block = f"{begin}\n{render(harness_id, runtime_dir, data_dir).rstrip()}\n{end}"
     if begin in old:
         prefix, rest = old.split(begin, 1)
         _, suffix = rest.split(end, 1)
-        new = prefix.rstrip() + "\n\n" + block + suffix
+        prefix = prefix.rstrip()
+        new = (prefix + "\n\n" if prefix else "") + block + suffix
     else:
         new = old.rstrip() + ("\n\n" if old.strip() else "") + block + "\n"
     tmp = config_path.with_suffix(config_path.suffix + ".tmp")
@@ -188,6 +195,38 @@ def apply_grok(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
     os.replace(tmp, config_path)
     return {"config": str(config_path), "backup": str(backup) if backup else None,
             "server": "lamf", "changed": old != new}
+
+
+def apply_grok(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
+    """Idempotently maintain an owned LAMF block in Grok's TOML config."""
+    return _apply_toml_block(config_path, runtime_dir, data_dir, "grok")
+
+
+def apply_codex(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
+    """Idempotently maintain an owned LAMF block in Codex's TOML config."""
+    return _apply_toml_block(config_path, runtime_dir, data_dir, "codex")
+
+
+def _remove_toml_block(config_path: Path) -> dict:
+    """Remove the LAMF managed block from a TOML config (Grok/Codex)."""
+    config_path = Path(config_path).expanduser()
+    if not config_path.exists():
+        return {"config": str(config_path), "removed": False, "changed": False}
+    begin, end = "# BEGIN LAMF MANAGED", "# END LAMF MANAGED"
+    old = config_path.read_text(encoding="utf-8")
+    if begin not in old:
+        return {"config": str(config_path), "removed": False, "changed": False}
+    if old.count(begin) != old.count(end) or old.count(begin) > 1:
+        raise ValueError(f"malformed LAMF managed block in {config_path}")
+    backup = config_path.with_name(f"{config_path.name}.bak.{int(time.time())}")
+    shutil.copy2(config_path, backup)
+    prefix, rest = old.split(begin, 1)
+    _, suffix = rest.split(end, 1)
+    new = prefix.rstrip("\n") + "\n" + suffix.lstrip("\n")
+    new = new.strip("\n") + "\n" if new.strip() else ""
+    _atomic_write(config_path, new)
+    return {"config": str(config_path), "backup": str(backup),
+            "removed": True, "changed": True}
 
 
 def apply_generic_json(config_path: Path, runtime_dir: Path, data_dir: Path,
@@ -240,22 +279,65 @@ def remove_generic_json(config_path: Path, owned_key: str = "lamf-memory") -> di
 
 def remove_grok(config_path: Path) -> dict:
     """Remove the LAMF managed block from Grok's TOML config."""
+    return _remove_toml_block(config_path)
+
+
+def remove_codex(config_path: Path) -> dict:
+    """Remove the LAMF managed block from Codex's TOML config."""
+    return _remove_toml_block(config_path)
+
+
+def apply_openclaw(config_path: Path, runtime_dir: Path, data_dir: Path) -> dict:
+    """Idempotently merge the LAMF MCP fallback server into openclaw.json.
+
+    Only the ``mcp.servers.lamf`` slot is owned here; the plugin entry, memory
+    slot and agent skill are installed by ``installer/install.py``'s OpenClaw
+    step (DECISIONS.md §W-03). Unrelated settings are preserved and a backup is
+    made before any change.
+    """
+    config_path = Path(config_path).expanduser()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    backup = None
+    if config_path.exists():
+        loaded = json.loads(config_path.read_text(encoding="utf-8"))
+        if loaded is not None and not isinstance(loaded, dict):
+            raise ValueError(f"JSON config must be an object: {config_path}")
+        existing = loaded or {}
+        backup = config_path.with_name(f"{config_path.name}.bak.{int(time.time())}")
+        shutil.copy2(config_path, backup)
+    mcp = existing.setdefault("mcp", {})
+    if not isinstance(mcp, dict):
+        mcp = existing["mcp"] = {}
+    servers = mcp.setdefault("servers", {})
+    if not isinstance(servers, dict):
+        servers = mcp["servers"] = {}
+    spec = server_spec(runtime_dir, data_dir, "openclaw")
+    servers["lamf"] = {**spec, "transport": "stdio", "enabled": True}
+    _atomic_write(config_path, json.dumps(existing, indent=2) + "\n")
+    return {"config": str(config_path), "backup": str(backup) if backup else None,
+            "server": "lamf", "changed": True}
+
+
+def remove_openclaw(config_path: Path) -> dict:
+    """Remove the LAMF-owned ``mcp.servers.lamf`` entry from openclaw.json."""
     config_path = Path(config_path).expanduser()
     if not config_path.exists():
         return {"config": str(config_path), "removed": False, "changed": False}
-    begin, end = "# BEGIN LAMF MANAGED", "# END LAMF MANAGED"
-    old = config_path.read_text(encoding="utf-8")
-    if begin not in old:
+    loaded = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise ValueError(f"JSON config must be an object: {config_path}")
+    servers = (loaded.get("mcp") or {}).get("servers")
+    if not isinstance(servers, dict) or "lamf" not in servers:
         return {"config": str(config_path), "removed": False, "changed": False}
-    if old.count(begin) != old.count(end) or old.count(begin) > 1:
-        raise ValueError(f"malformed LAMF managed block in {config_path}")
     backup = config_path.with_name(f"{config_path.name}.bak.{int(time.time())}")
     shutil.copy2(config_path, backup)
-    prefix, rest = old.split(begin, 1)
-    _, suffix = rest.split(end, 1)
-    new = prefix.rstrip("\n") + "\n" + suffix.lstrip("\n")
-    new = new.strip("\n") + "\n" if new.strip() else ""
-    _atomic_write(config_path, new)
+    del servers["lamf"]
+    if not servers:
+        del loaded["mcp"]["servers"]
+        if not loaded["mcp"]:
+            del loaded["mcp"]
+    _atomic_write(config_path, json.dumps(loaded, indent=2) + "\n")
     return {"config": str(config_path), "backup": str(backup),
             "removed": True, "changed": True}
 
@@ -314,3 +396,62 @@ def validate_all(runtime_dir: Path, data_dir: Path) -> list[str]:
             except json.JSONDecodeError as exc:
                 errors.append(f"{hid}: invalid JSON: {exc}")
     return errors
+
+
+# Default per-harness config locations. ``kimi`` is resolved by
+# ``kimi_config_path`` (modern path, legacy detection); ``generic`` has no
+# default and always requires an explicit target.
+DEFAULT_CONFIG_PATHS = {
+    "codex": "~/.codex/config.toml",
+    "claude": "~/.claude/mcp.json",
+    "gemini": "~/.gemini/settings.json",
+    "grok": "~/.grok/config.toml",
+    "openclaw": "~/.openclaw/openclaw.json",
+    "hermes": "~/.hermes/config.yaml",
+}
+
+
+def default_config_path(harness_id: str) -> Path | None:
+    """Return the default config path for *harness_id*, or None for generic."""
+    if harness_id == "kimi":
+        return kimi_config_path()
+    raw = DEFAULT_CONFIG_PATHS.get(harness_id)
+    return Path(raw).expanduser() if raw is not None else None
+
+
+# Apply/remove dispatch. Every entry backs up the target before changing it,
+# preserves unrelated settings, and is idempotent. ``generic`` shares the JSON
+# mcpServers merge with the named JSON harnesses.
+def apply(harness_id: str, runtime_dir: Path, data_dir: Path,
+          config_path: Path | None = None) -> dict:
+    """Merge the LAMF registration into *harness_id*'s host config."""
+    if harness_id not in HARNESSES:
+        raise ValueError(f"unknown harness {harness_id!r}")
+    target = Path(config_path).expanduser() if config_path else default_config_path(harness_id)
+    if target is None:
+        raise ValueError(f"harness {harness_id!r} requires an explicit config path")
+    if harness_id in ("codex", "grok"):
+        return _apply_toml_block(target, runtime_dir, data_dir, harness_id)
+    if harness_id == "hermes":
+        return apply_hermes(target, runtime_dir, data_dir)
+    if harness_id == "openclaw":
+        return apply_openclaw(target, runtime_dir, data_dir)
+    # claude, kimi, gemini, generic: JSON mcpServers merge
+    return apply_generic_json(target, runtime_dir, data_dir,
+                              owned_key="lamf-memory", harness_id=harness_id)
+
+
+def remove(harness_id: str, config_path: Path | None = None) -> dict:
+    """Remove the LAMF-owned entry from *harness_id*'s host config."""
+    if harness_id not in HARNESSES:
+        raise ValueError(f"unknown harness {harness_id!r}")
+    target = Path(config_path).expanduser() if config_path else default_config_path(harness_id)
+    if target is None:
+        raise ValueError(f"harness {harness_id!r} requires an explicit config path")
+    if harness_id in ("codex", "grok"):
+        return _remove_toml_block(target)
+    if harness_id == "hermes":
+        return remove_hermes(target)
+    if harness_id == "openclaw":
+        return remove_openclaw(target)
+    return remove_generic_json(target, owned_key="lamf-memory")
