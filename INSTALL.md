@@ -2,6 +2,39 @@
 
 This guide installs LAMF from a clean source checkout while keeping the running authority and its private data outside Git.
 
+## Windows: the optional one-click installer beta (`LAMF-beta.exe`)
+
+If you have `LAMF-beta.exe`, double-click it and skip the rest of this guide. It is a
+single windowed executable — no console, no unpacking, nothing to install first
+except Python 3.10+ (the installer detects it and shows you the one command that
+installs it if it is missing).
+
+This path is **beta** and the executable is not code-signed. Windows SmartScreen
+or enterprise policy may warn or block it. The PowerShell installer below remains
+the stable installation method. Verify the beta download with the companion
+`dist/LAMF-beta.exe.sha256` file; checksums verify bytes, not publisher identity.
+
+The window asks for four things, then does the work and shows the live output:
+
+- **Your memories** — the permanent data folder holding the database, instance
+  key and operator token. It must sit outside any Git checkout; the installer
+  refuses otherwise, exactly like the command-line path.
+- **Program files** — where LAMF itself lives permanently. Launchers and agent
+  configs point here, so it must be a folder that stays put. It must be separate
+  from the data folder, so upgrading can never touch your memories.
+- **Security profile** — the same four fixed profiles described in §3.
+- **Your agents** — every supported harness as an independent checkbox; pick any
+  number, all of them, or none.
+
+The EXE carries the whole package as a payload and **stages it to the program
+files folder before running the installer**, so no launcher and no harness
+registration ever points into PyInstaller's temporary unpack directory. The
+installer verifies this afterwards and fails loudly if a generated file still
+references a temp path. Building the EXE is documented in
+[docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md).
+
+Everything below is the command-line path, which the GUI simply drives.
+
 ## 1. Prerequisites
 
 Confirm Python 3.10 or newer is available:
@@ -28,7 +61,13 @@ macOS or Linux example:
 bash ./installer/install.sh --data-dir "$HOME/LAMF"
 ```
 
-Never choose the Git checkout as the data directory.
+Never choose the Git checkout as the data directory. The installer enforces this:
+if the requested data directory sits inside a Git checkout it refuses and exits
+before creating anything, so the instance key, operator token, database, and event
+spine can never land in a repository. If you genuinely need it — for example to
+repair an instance that already lives there — pass `--allow-git-data-dir`, and keep
+those files out of every commit. The optional Obsidian projection is unaffected and
+may be its own repository.
 
 ## 3. Choose a security profile
 
@@ -47,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File .\installer\Install-LAMF.ps1 --data-dir
 
 ## 4. Connect agent harnesses
 
-Use one or more repeatable `--harness` options. Supported values are `codex`, `claude`, `kimi`, `grok`, `openclaw`, `hermes`, `all`, and `none`.
+Use one or more repeatable `--harness` options. Supported values are `codex`, `claude`, `kimi`, `gemini`, `grok`, `openclaw`, `hermes`, `generic`, `all`, and `none`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\installer\Install-LAMF.ps1 --data-dir "E:\LAMF-Data" --harness codex --harness claude

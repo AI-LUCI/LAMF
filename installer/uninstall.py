@@ -7,6 +7,8 @@ What it does:
      start-lamf helpers wrote);
   2. removes LAMF's OpenClaw registration (plugin entry, memory slot, MCP
      fallback server) and the agent skill — backing up openclaw.json first;
+     then removes the LAMF-owned entry from every other harness config it may
+     have merged (Codex, Claude, Kimi, Gemini, Grok, Hermes), backing each up;
   3. KEEPS your data (~/LAMF) and your vault (~/LAMF Vault) unless you pass
      --purge AND confirm twice.
 
@@ -95,6 +97,31 @@ def stop_lamf(ui: inst.UI, data_dir: Path) -> None:
         ui.info("LAMF was not running.")
 
 
+def remove_harness_registrations(ui: inst.UI) -> None:
+    """Remove LAMF-owned entries from every harness config we may have merged.
+
+    Uses the same safe, backup-first removers as the runtime registry. Only the
+    LAMF-owned block/entry is removed; unrelated settings are preserved. Missing
+    configs and harnesses with no LAMF entry are skipped silently.
+    """
+    sys.path.insert(0, str(inst.runtime_dir()))
+    try:
+        from lamf import harness as h
+    except Exception as exc:  # noqa: BLE001 — runtime may not be importable
+        ui.detail(f"harness registry unavailable ({exc}); skipping config cleanup.")
+        return
+    for hid in inst.APPLYABLE_HARNESSES:
+        target = h.default_config_path(hid)
+        if target is None or not target.exists():
+            continue
+        try:
+            res = h.remove(hid, target)
+            if res.get("removed"):
+                ui.ok(f"{hid}: removed LAMF entry from {res['config']} (backup made).")
+        except Exception as exc:  # noqa: BLE001 — report and continue
+            ui.warn(f"{hid}: could not clean {target} ({exc}); leaving it untouched.")
+
+
 def purge(ui: inst.UI, data_dir: Path, vault: Path, assume_yes: bool) -> bool:
     """Delete data + vault + venv. Requires TWO explicit confirmations."""
     print()
@@ -147,20 +174,24 @@ def main(argv: list[str]) -> int:
 
     ui.banner("LAMF uninstaller")
     print()
-    print("  This stops LAMF and removes its OpenClaw registration.")
+    print("  This stops LAMF and removes its harness registrations (OpenClaw,")
+    print("  Codex, Claude, Kimi, Gemini, Grok, Hermes). Each config is backed up first.")
     if not args.purge:
         print("  Your memories and your vault are NOT touched.")
 
     ui.step(1, 3, "Stopping the LAMF server and watcher")
     stop_lamf(ui, data_dir)
 
-    ui.step(2, 3, "Removing the OpenClaw registration and skill")
+    ui.step(2, 4, "Removing the OpenClaw registration and skill")
     if inst.unregister_openclaw(ui):
         ui.ok("OpenClaw registration removed (openclaw.json backed up first).")
     else:
         ui.info("No OpenClaw registration found — nothing to remove.")
 
-    ui.step(3, 3, "Data")
+    ui.step(3, 4, "Removing harness registrations")
+    remove_harness_registrations(ui)
+
+    ui.step(4, 4, "Data")
     rc = 0
     if args.purge:
         if not purge(ui, data_dir, vault, args.yes):

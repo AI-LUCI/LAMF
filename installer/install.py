@@ -114,7 +114,7 @@ DEFAULT_DATA_DIR = "~/LAMF"
 DEFAULT_VAULT = "~/LAMF Vault"
 DEFAULT_PROFILE = "controlled"
 PROFILES = ("locked", "controlled", "trusted-local", "open-local")
-HARNESSES = ("codex", "claude", "kimi", "grok", "openclaw", "hermes")
+HARNESSES = ("codex", "claude", "kimi", "gemini", "grok", "openclaw", "hermes", "generic")
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +222,23 @@ def venv_python() -> Path:
 
 def expand(p: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(p))).resolve()
+
+
+def git_checkout_root(path: Path) -> Path | None:
+    """Nearest ancestor of `path` (inclusive) that is a Git checkout, else None.
+
+    Deliberately does NOT shell out to `git`: the data/Git boundary must hold on
+    machines where Git is not installed, which is exactly where a stray checkout
+    is most likely to go unnoticed. A worktree or submodule uses a `.git` FILE
+    rather than a directory, so both are accepted."""
+    try:
+        candidate = path.resolve()
+    except OSError:
+        candidate = path
+    for parent in (candidate, *candidate.parents):
+        if (parent / ".git").exists():
+            return parent
+    return None
 
 
 def is_tty() -> bool:
@@ -562,11 +579,10 @@ def write_harness_registrations(ui: UI, data_dir: Path,
     """Emit portable registrations for every supported client without applying
     or overwriting any host configuration."""
     sys.path.insert(0, str(runtime_dir()))
-    from lamf.harness import render
+    from lamf.harness import HARNESSES as REGISTRY, render
     out = data_dir / "adapters"
     out.mkdir(parents=True, exist_ok=True)
-    extensions = {"codex": "toml", "claude": "json", "kimi": "json", "grok": "toml",
-                  "openclaw": "json", "hermes": "yaml", "generic": "json"}
+    extensions = {hid: h.format for hid, h in REGISTRY.items()}
     for old in out.glob("*.toml"):
         old.unlink()
     for old in out.glob("*.json"):
@@ -585,6 +601,45 @@ def write_harness_registrations(ui: UI, data_dir: Path,
     else:
         ui.ok("No agent harness selected. LAMF CLI and Obsidian remain fully available.")
     return out
+
+
+# Harnesses the installer can merge directly into a host config file. OpenClaw
+# is handled separately by step_openclaw (plugin + memory slot + MCP fallback +
+# skill, DECISIONS.md §W-03); "generic" has no default config location and is
+# emitted as a snippet only. Every merge backs up the target first and
+# preserves unrelated settings (DECISIONS.md §W-07).
+APPLYABLE_HARNESSES = ("codex", "claude", "kimi", "gemini", "grok", "hermes")
+
+
+def apply_harness_registrations(ui: UI, data_dir: Path,
+                                selected: tuple[str, ...]) -> dict:
+    """Actually merge selected harnesses into their host configs (safe merge).
+
+    Returns a {harness_id: "applied" | "skipped" | "failed"} map. Failures are
+    reported with an exact fix and never abort the install — the emitted
+    snippets under <data-dir>/adapters/ remain the portable fallback.
+    """
+    sys.path.insert(0, str(runtime_dir()))
+    from lamf import harness as h
+    results: dict[str, str] = {}
+    for hid in selected:
+        if hid in ("openclaw", "generic"):
+            # openclaw: step_openclaw owns the full registration.
+            # generic: no default config location; snippet is the deliverable.
+            results[hid] = "skipped"
+            continue
+        target = h.default_config_path(hid)
+        try:
+            res = h.apply(hid, runtime_dir(), data_dir, target)
+            results[hid] = "applied"
+            ui.ok(f"{hid}: merged into {res['config']}"
+                  + (f" (backup: {res['backup']})" if res.get("backup") else ""))
+        except Exception as exc:  # noqa: BLE001 — report and continue
+            results[hid] = "failed"
+            ui.warn(f"{hid}: could not update {target} ({exc}). "
+                    f"The portable snippet is in {data_dir / 'adapters'}; "
+                    f"or run: lamf harness apply {hid}")
+    return results
 
 
 def choose_harnesses(requested: list[str] | None, *, interactive: bool) -> tuple[str, ...]:
@@ -932,7 +987,7 @@ def on_windows_drive_mount(path: Path) -> bool:
 
 
 def run_doctor(ui: UI, data_dir: Path, vault: Path | None,
-               openclaw_state: str) -> Doctor:
+               openclaw_state: str, server_expected: bool = True) -> Doctor:
     d = Doctor(ui)
     py = venv_python()
 
@@ -967,13 +1022,26 @@ def run_doctor(ui: UI, data_dir: Path, vault: Path | None,
     elif token_ok:
         d.check(True, f"Operator token present with 0600 permissions: {token_file}")
 
-    d.check(server_up(), f"LAMF server reachable at {LAMF_URL}/v1/status",
-            fix=f"start it: {data_dir / 'bin' / 'start-lamf.sh'}  (Windows: start-lamf.ps1) — "
-                f"logs are in {data_dir / 'logs'}")
+    # A server that was intentionally not started (--no-start) is not a failure.
+    # It still reports green if something else already had it running.
+    start_fix = (f"start it: {data_dir / 'bin' / 'start-lamf.sh'}  (Windows: start-lamf.ps1) — "
+                 f"logs are in {data_dir / 'logs'}")
+    server_running = server_up()
+    if server_expected or server_running:
+        d.check(server_running, f"LAMF server reachable at {LAMF_URL}/v1/status",
+                fix=start_fix)
+    else:
+        d.check(False, "LAMF server not started — --no-start was given, as requested",
+                warn_only=True, fix=start_fix)
 
-    d.check(_url_up(LAMF_URL + "/"),
-            f"Built-in LAMF workspace reachable at {LAMF_URL}",
-            fix=f"start it: {data_dir / 'bin' / 'start-lamf.ps1'}")
+    ui_running = _url_up(LAMF_URL + "/")
+    if server_expected or ui_running:
+        d.check(ui_running,
+                f"Built-in LAMF workspace reachable at {LAMF_URL}",
+                fix=f"start it: {data_dir / 'bin' / 'start-lamf.ps1'}")
+    else:
+        d.check(False, "Built-in LAMF workspace not served — --no-start was given, as requested",
+                warn_only=True, fix=f"start it: {data_dir / 'bin' / 'start-lamf.ps1'}")
 
     if vault is not None:
         d.check((vault / "00 Home.md").is_file(),
@@ -1013,11 +1081,20 @@ def run_doctor(ui: UI, data_dir: Path, vault: Path | None,
 # (9) Finish card
 # ---------------------------------------------------------------------------
 def finish_card(ui: UI, vault: Path | None, openclaw_state: str,
-                doctor: Doctor, data_dir: Path) -> None:
-    ui.banner("ALL DONE — your local memory is ready")
-    print()
-    print(f"  Open the built-in LAMF workspace:  {LAMF_URL}")
-    print("  It runs locally and does not require Obsidian.")
+                doctor: Doctor, data_dir: Path, server_running: bool = True) -> None:
+    if server_running:
+        ui.banner("ALL DONE — your local memory is ready")
+        print()
+        print(f"  Open the built-in LAMF workspace:  {LAMF_URL}")
+        print("  It runs locally and does not require Obsidian.")
+    else:
+        ui.banner("SETUP COMPLETE — nothing is running yet (--no-start)")
+        print()
+        print("  Your memory is initialized but the server was not started,")
+        print("  exactly as you asked. Start it whenever you like:")
+        script = data_dir / "bin" / ("start-lamf.ps1" if sys.platform == "win32" else "start-lamf.sh")
+        print(f"       {script}")
+        print(f"  Then open:  {LAMF_URL}")
     print()
     if vault is not None:
         print("  Optional Obsidian view (runs in parallel):")
@@ -1066,10 +1143,48 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="optionally initialize the Obsidian projection as a local Git repo")
     p.add_argument("--no-start", action="store_true",
                    help="do not start the LAMF server at the end")
+    p.add_argument("--allow-git-data-dir", action="store_true",
+                   help="UNSAFE: permit a data directory inside a Git checkout "
+                        "(refused by default so keys/tokens/events cannot be committed)")
     p.add_argument("--reset", action="store_true",
                    help="erase existing LAMF data and initialize fresh (asks first)")
     p.add_argument("--verbose", action="store_true", help="show every command and its output")
     return p.parse_args(argv)
+
+
+def guard_data_dir_outside_git(ui: UI, data_dir: Path, allow: bool) -> bool:
+    """Pre-mutation boundary check (INSTALL.md: never use a Git checkout as the
+    data directory). The authority holds the instance key, operator token, event
+    spine, and database; inside a checkout those are one `git add -A` away from
+    being published. Returns False when the installer must abort BEFORE creating
+    anything. The optional Obsidian projection is unaffected — it is a derived
+    view and is allowed to be its own repository (see setup_git_vault)."""
+    root = git_checkout_root(data_dir)
+    if root is None:
+        return True
+    if allow:
+        ui.warn(f"Data directory is inside the Git checkout at {root}.")
+        print("         --allow-git-data-dir was given, so continuing anyway.")
+        print("         Keep the instance key, operator token, database, and")
+        print("         events out of every commit — they are secrets.")
+        return True
+    ui.fail(
+        f"Refusing to create LAMF data inside a Git checkout ({root}).",
+        fix=f"choose a data directory outside it, e.g. "
+            f"--data-dir \"{expand(DEFAULT_DATA_DIR)}\"",
+    )
+    print()
+    print(f"  Requested data directory: {data_dir}")
+    print(f"  Git checkout detected at: {root}")
+    print()
+    print("  That directory would hold your instance key, operator token,")
+    print("  event spine, and database. Inside a repository those are one")
+    print("  commit away from being published, so nothing has been created.")
+    print()
+    print("  If you really intend this (for example repairing an instance that")
+    print("  already lives there), re-run with --allow-git-data-dir.")
+    print()
+    return False
 
 
 def registered_paths() -> tuple[Path | None, Path | None]:
@@ -1125,6 +1240,9 @@ def main(argv: list[str]) -> int:
         vault = expand(args.vault) if args.vault else (reg_vault or expand(DEFAULT_VAULT))
     else:
         vault = None
+    # Boundary check BEFORE anything is created on disk.
+    if not guard_data_dir_outside_git(ui, data_dir, args.allow_git_data_dir):
+        return 2
     # Make the resolved data dir visible to path helpers (venv fallback, doctor)
     os.environ["LAMF_DATA_DIR"] = str(data_dir)
 
@@ -1165,6 +1283,7 @@ def main(argv: list[str]) -> int:
     ui.step(6, total, "Start/stop helper scripts + starting the server")
     helpers = write_helper_scripts(ui, data_dir, vault)
     write_harness_registrations(ui, data_dir, harnesses)
+    apply_harness_registrations(ui, data_dir, harnesses)
     if vault is not None:
         setup_git_vault(ui, vault, git_mode)
     if init_ok:
@@ -1177,9 +1296,11 @@ def main(argv: list[str]) -> int:
     openclaw_state = step_openclaw(ui, data_dir, not use_openclaw, vault=vault)
 
     ui.step(8, total, "Doctor — checking that everything is healthy")
-    doctor = run_doctor(ui, data_dir, vault, openclaw_state)
+    doctor = run_doctor(ui, data_dir, vault, openclaw_state,
+                        server_expected=not args.no_start)
 
-    finish_card(ui, vault, openclaw_state, doctor, data_dir)
+    finish_card(ui, vault, openclaw_state, doctor, data_dir,
+                server_running=server_up())
     return 0 if doctor.failures == 0 else 1
 
 

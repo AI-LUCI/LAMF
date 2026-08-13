@@ -47,8 +47,56 @@ def main() -> int:
             ignore = (vault / ".gitignore").read_text(encoding="utf-8")
             assert "07 Review Queue/" in ignore and "99 System/" in ignore
             assert not (data / ".git").exists()
+    # --- Data/Git boundary: refuse an authority directory inside a checkout ---
+    assert installer.parse_args([]).allow_git_data_dir is False
+    assert installer.parse_args(["--allow-git-data-dir"]).allow_git_data_dir is True
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td).resolve()
+        checkout = root / "repo"
+        (checkout / ".git").mkdir(parents=True)
+        nested = checkout / "sub" / "LAMF"
+        outside = root / "outside" / "LAMF"
+
+        # Detection walks up and is independent of the `git` binary.
+        assert installer.git_checkout_root(nested) == checkout
+        assert installer.git_checkout_root(checkout) == checkout
+        assert installer.git_checkout_root(outside) is None
+
+        # A worktree/submodule marks the root with a `.git` FILE, not a directory.
+        linked = root / "worktree"
+        linked.mkdir()
+        (linked / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n", encoding="utf-8")
+        assert installer.git_checkout_root(linked / "LAMF") == linked
+
+        ui = installer.UI()
+        # Refused by default, and refused BEFORE anything is created on disk.
+        assert installer.guard_data_dir_outside_git(ui, nested, False) is False
+        assert not nested.exists()
+        # Explicit opt-in still allowed (repairing an instance already there).
+        assert installer.guard_data_dir_outside_git(ui, nested, True) is True
+        # Outside any checkout is always fine.
+        assert installer.guard_data_dir_outside_git(ui, outside, False) is True
+
+    # --- --no-start doctor semantics: intentionally stopped is not a failure ---
+    if installer.server_up():
+        print("SKIP --no-start doctor delta: a LAMF server is already running here")
+    else:
+        with tempfile.TemporaryDirectory() as td:
+            data = Path(td) / "data"
+            ui = installer.UI()
+            expected = installer.run_doctor(ui, data, None, "absent", server_expected=True)
+            not_expected = installer.run_doctor(ui, data, None, "absent", server_expected=False)
+            # The two reachability checks move from failures to warnings; every
+            # other check is unchanged, so the deltas are exactly 2.
+            assert not_expected.failures == expected.failures - 2, (
+                f"{expected.failures} -> {not_expected.failures}")
+            assert not_expected.warnings == expected.warnings + 2, (
+                f"{expected.warnings} -> {not_expected.warnings}")
+
     print("PASS installer scope: none/multiple/all harnesses + CLI-only mode")
     print("PASS Git scope: projection-only repository; authority and secrets excluded")
+    print("PASS data/Git boundary: authority refused inside a checkout, pre-mutation")
+    print("PASS --no-start doctor: stopped server warns instead of failing")
     return 0
 
 
