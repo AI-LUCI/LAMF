@@ -68,19 +68,18 @@ def main() -> int:
         shutil.rmtree(root, ignore_errors=True)
     import yaml
     with tempfile.TemporaryDirectory() as td:
-        import tomllib
         config = Path(td) / "config.toml"
         config.write_text('model = "codex-test"\n', encoding="utf-8")
         apply_codex(config, RUNTIME, data)
         apply_codex(config, RUNTIME, data)
         text = config.read_text(encoding="utf-8")
-        parsed = tomllib.loads(text)
-        server = parsed["mcp_servers"]["lamf-memory"]
-        assert server["cwd"] == str(RUNTIME)
-        assert server["enabled"] is True and server["required"] is True
-        assert server["default_tools_approval_mode"] == "prompt"
-        assert server["tools"]["memory_orientation"]["approval_mode"] == "approve"
-        assert "lamf" not in parsed["mcp_servers"]
+        assert "[mcp_servers.lamf-memory]" in text
+        assert f'cwd = "{str(RUNTIME).replace(chr(92), chr(92) * 2)}"' in text
+        assert "enabled = true" in text and "required = true" in text
+        assert 'default_tools_approval_mode = "prompt"' in text
+        assert "[mcp_servers.lamf-memory.tools.memory_orientation]" in text
+        assert 'approval_mode = "approve"' in text
+        assert "[mcp_servers.lamf]" not in text
         assert text.count("# BEGIN LAMF MANAGED") == 1
         print("PASS codex apply: complete required startup registration + cwd + approvals")
     with tempfile.TemporaryDirectory() as td:
