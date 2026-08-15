@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stale Context Guards"
+  short_description: "Reject edits based on outdated state"
+  default_prompt: "Use $stale-context-guards to protect mutations from outdated file or record state."

@@ -1,8 +1,4 @@
-# Windows GUI installer beta and `LAMF.exe`
-
-> **Beta:** this optional installation method is not code-signed and has not yet
-> completed broad clean-machine testing. The PowerShell installer remains the
-> stable Windows path. Repository builds are published as `dist/LAMF-beta.exe`.
+# Windows GUI installer and `LAMF.exe`
 
 The Windows front door for LAMF is a single windowed executable that drives the
 existing installer core. It owns presentation and packaging only; every
@@ -82,7 +78,7 @@ so an upgrade does not force a full dependency reinstall.
   first, then `python3.x` on PATH, skipping the zero-byte Windows Store aliases)
   and shows a copyable `winget` line with a "Check again" button when none
   exists.
-- **The install is recorded.** A small JSON installation record is written in the program-files directory and
+- **The install is recorded.** `lamf-install.json` in the program-files directory
   pre-fills the next run's choices.
 
 ## Tests

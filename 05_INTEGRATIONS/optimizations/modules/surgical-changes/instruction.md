@@ -1,0 +1,1 @@
+Keep changes surgical: every changed line should be directly required by the user's request. Match established project patterns, avoid unrelated refactors or formatting, remove only orphans created by the current change, and report unrelated problems without silently modifying them. Fix shared root causes after checking affected callers rather than patching one visible symptom.

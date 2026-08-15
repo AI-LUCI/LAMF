@@ -1,3 +1,5 @@
 # LAMF reference runtime dependencies (DECISIONS.md W-02: pyyaml + pynacl ONLY)
-pyyaml
-pynacl
+PyYAML==6.0.3
+PyNaCl==1.6.2
+cffi==2.1.1
+pycparser==3.0

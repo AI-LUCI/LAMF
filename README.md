@@ -68,21 +68,6 @@ bash installer/install.sh
 powershell -ExecutionPolicy Bypass -File installer/Install-LAMF.ps1
 ```
 
-### Optional Windows GUI installer (beta)
-
-Windows users may instead download and double-click
-[`dist/LAMF-beta.exe`](dist/LAMF-beta.exe). This **beta** installer provides a
-graphical setup flow with independent selections for Codex, Claude, Kimi,
-Gemini, Grok, OpenClaw, Hermes, and Generic MCP. It still requires Python 3.10+
-and uses the same tested `installer/install.py` core as the PowerShell method.
-
-The beta executable is currently unsigned, so Windows SmartScreen or enterprise
-policy may warn or block it. Verify the download against
-[`dist/LAMF-beta.exe.sha256`](dist/LAMF-beta.exe.sha256). A matching checksum
-confirms file integrity, but is not publisher authentication or code signing.
-The implementation, limitations, and reproducible build command are documented
-in [docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md).
-
 The installer is safe to re-run. It builds the Python environment, initializes the
 private authority at `~/LAMF`, shows the operator token once, starts the built-in
 LAMF workspace, and configures selected harnesses. Obsidian is an explicit optional
@@ -101,11 +86,12 @@ Useful commands afterwards: `~/LAMF/bin/start-lamf.sh` / `stop-lamf.sh`
 If anything fails, every error message prints its own fix command, and re-running
 the installer repairs almost everything.
 
-**Status: reference implementation.** The runtime (`runtime/`) implements the
-architecture contracts and passes a 14-stage end-to-end smoke suite
-(`runtime/tests/smoke_test.py`) plus the 8-check package validator
-(`tools/validate_package.py`). It is reference quality — correct and tested, not
-production-hardened. "Validated" still means exactly one thing: those two suites pass.
+**Current release: LAMF 3.0.0.** Protocol 3 encrypts record metadata at rest,
+uses a keyed contentless FTS5 search index, enforces bounded context output,
+rate-limits authentication failures, bounds the store work queue, and verifies
+optional optimization instructions against a hash manifest. See
+[`docs/RELEASE_3_0.md`](docs/RELEASE_3_0.md) for security gates, migration notes,
+MemoryBench results, and the complete optimization matrix disclosure.
 
 ## The three layers
 

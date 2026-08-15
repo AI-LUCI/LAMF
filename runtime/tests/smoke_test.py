@@ -670,7 +670,7 @@ def s11(S):
 # 12 — MCP handshake
 # ---------------------------------------------------------------------------
 
-@stage("12 MCP: 9 tools + two independent agents coordinate")
+@stage("12 MCP: 10 tools + two independent agents coordinate")
 def s12(S):
     driver = textwrap_driver(S)
     env = dict(os.environ)
@@ -721,7 +721,7 @@ def s12(S):
         init = replies[1]["result"]
         check(init["protocolVersion"] == "2025-03-26",
               f"protocolVersion: {init}")
-        check(init["serverInfo"] == {"name": "lamf", "version": "2.0.0"},
+        check(init["serverInfo"] == {"name": "lamf", "version": "3.0.0"},
               f"serverInfo: {init}")
         instructions = init.get("instructions", "")
         check("beginning of every new task" in instructions
@@ -733,6 +733,7 @@ def s12(S):
         tools = [t["name"] for t in tool_defs]
         expected = ["memory_search", "memory_get", "memory_remember",
                     "memory_context", "memory_orientation", "memory_handoff",
+                    "memory_activity",
                     "memory_status", "memory_approvals", "memory_export"]
         check(sorted(tools) == sorted(expected),
               f"tools/list mismatch: {tools}")

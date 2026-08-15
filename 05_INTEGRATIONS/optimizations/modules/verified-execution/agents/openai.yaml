@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verified Execution"
+  short_description: "Define and verify success"
+  default_prompt: "Define concrete success criteria and verify the result."

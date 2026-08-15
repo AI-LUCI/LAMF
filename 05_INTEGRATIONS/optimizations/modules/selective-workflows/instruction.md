@@ -1,0 +1,1 @@
+Use the smallest relevant workflow: answer or inspect directly for simple tasks; invoke specialized procedures only when their trigger matches; ask questions only when the missing answer materially changes the result; use parallel agents only for independent bounded work; and keep durable memory separate from transient task coordination.

@@ -29,6 +29,8 @@ Pinned interface (runtime/README.md):
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import os
 import stat
 from pathlib import Path
@@ -129,6 +131,18 @@ class InstanceKey:
         first8…last4 of the pubkey hex."""
         h = self.pub_hex
         return f"{h[:8]}…{h[-4:]}"
+
+    def derive_key(self, purpose: str, length: int = 32) -> bytes:
+        """Derive an instance-local subkey without exposing identity material.
+
+        Protocol 3 uses this for keyed blind search indexes.  Purpose labels
+        are domain-separated and the signing seed never leaves this object.
+        """
+        if not purpose or length < 16 or length > 32:
+            raise ValueError("purpose is required and length must be 16..32")
+        return hmac.new(bytes(self._sk),
+                        b"LAMF3\x00" + purpose.encode("utf-8"),
+                        hashlib.sha256).digest()[:length]
 
     # -- X25519 wrapping counterpart (U-13a) --------------------------------
     def _x25519_sk(self) -> bytes:

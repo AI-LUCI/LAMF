@@ -107,7 +107,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 PLUGIN_ID = "lamf-memory"
 LAMF_URL = "http://127.0.0.1:8734"
 DEFAULT_DATA_DIR = "~/LAMF"
@@ -397,28 +397,20 @@ def step_init(ui: UI, data_dir: Path, profile: str, reset: bool) -> str:
 
 
 def step_token(ui: UI, data_dir: Path, fresh: bool) -> str | None:
-    """(4) Show the operator token ONCE (first init only) with a keep-it-safe note."""
+    """(4) Verify the operator token without disclosing it to logs/output."""
     token_file = data_dir / "operator.token"
     if not token_file.is_file():
         ui.warn(f"Operator token not found at {token_file} (init may not have completed).")
         return None
     if not fresh:
         ui.ok(f"Operator token is in place: {token_file} (0600; not shown again)")
-        return token_file.read_text(encoding="utf-8").strip()
+        return None
     try:
         token_file.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
     except OSError:
         pass  # Windows ACLs differ; the runtime still guards the file.
-    token = token_file.read_text(encoding="utf-8").strip()
-    print()
-    print("  +------------------------------------------------------------------+")
-    print("  |  YOUR LAMF OPERATOR TOKEN (shown this one time — keep it safe)   |")
-    print("  +------------------------------------------------------------------+")
-    print(f"    {token}")
-    print()
-    print(f"  It also lives in {token_file} (permissions 0600).")
-    print("  Anyone with this token can read your memory. Do not post it anywhere.")
-    return token
+    ui.ok(f"Operator token created securely at {token_file} (not displayed)")
+    return None
 
 
 def step_vault(ui: UI, vault: Path) -> bool:

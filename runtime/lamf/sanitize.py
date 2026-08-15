@@ -34,6 +34,9 @@ from __future__ import annotations
 
 import math
 import re
+import base64
+import unicodedata
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
@@ -108,11 +111,36 @@ def scan(text: str, registered_values: Optional[Sequence[str]] = None) -> List[s
     """Run all value detectors; return the list of detector categories that
     matched (empty = clean). Detector runs happen on the FULL pre-truncation
     text (SECRET_PATTERNS.md §4)."""
+    # Scan bounded normalized representations as well as the original.  This
+    # closes common transport obfuscations without ever persisting decoded
+    # material.  Work is linear and bounded to prevent decompression attacks.
+    source = str(text or "")
+    normalized = unicodedata.normalize("NFKC", source)
+    normalized = re.sub(r"\\u([0-9a-fA-F]{4})",
+                        lambda m: chr(int(m.group(1), 16)), normalized)
+    decoded_url = urllib.parse.unquote(normalized[:MESSAGE_MAX_BYTES * 3])
+    compact = "".join(ch for ch in decoded_url
+                      if not ch.isspace() and unicodedata.category(ch) != "Cf")
+    variants = [source, normalized, decoded_url, compact]
+    for run in re.findall(r"[A-Za-z0-9_+/=-]{24,}", decoded_url)[:64]:
+        try:
+            raw = base64.urlsafe_b64decode(run + "=" * (-len(run) % 4))
+            if 8 <= len(raw) <= MESSAGE_MAX_BYTES:
+                variants.append(raw.decode("utf-8", "ignore"))
+        except (ValueError, TypeError):
+            pass
+
     hits: List[str] = []
-    for name, rx in SECRET_PATTERNS:
-        if rx.search(text):
-            hits.append(name)
-    for m in _ENTROPY_RUN.finditer(text):
+    for candidate in variants:
+        for name, rx in SECRET_PATTERNS:
+            if rx.search(candidate):
+                hits.append(name)
+        # Prefixes that are case-insensitive in practice are checked after
+        # normalization even though their canonical display form is cased.
+        folded = candidate.casefold()
+        if re.search(r"akia[0-9a-z]{16}", folded):
+            hits.append("aws_access_key_id")
+    for m in _ENTROPY_RUN.finditer(decoded_url):
         run = m.group(0)
         if _HEX_RUN.match(run):
             # Public digests are common durable identifiers, not secrets.

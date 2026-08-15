@@ -27,6 +27,36 @@ All notable changes to the LAMF package are documented here. Format follows
 - Isolation tests proving invalid, disabled, or absent optional modules cannot
   affect the core LAMF memory service.
 
+## [3.0.0] — 2026-08-15
+
+### Added
+
+- Protocol 3 encrypted metadata for titles, tags, and entities.
+- Keyed, contentless FTS5 retrieval with native BM25 ranking and automatic
+  rebuild of a missing, incomplete, or corrupt derived search index.
+- Explicit, backed-up migration for protocol-2 stores and legacy protocol-3
+  blind-term indexes.
+- Enforced context/orientation output budgets, HTTP authentication throttling,
+  bounded store queues, and hash-pinned optional optimization instructions.
+- Six independently switchable, opt-in optimization modules and a full 64-way
+  interaction benchmark with confirmation repeats.
+
+### Changed
+
+- Search tokens are 96-bit truncated HMAC-SHA256 values derived from the local
+  instance key; plaintext searchable vocabulary is not stored in SQLite.
+- LongMemEval/MemoryBench retrieval retains the established 2.x quality while
+  reducing median query latency from 204.1751 ms to 129.6833 ms in the disclosed
+  three-run validation.
+
+### Security
+
+- Removed plaintext metadata and FTS corpus exposure from the database.
+- Hardened Unicode/encoded secret sanitization, local HTTP authentication,
+  Windows ACL application, dependency pinning, and installer log handling.
+- Added adversarial migration, corruption recovery, forced termination,
+  concurrent-write, and disk-full rollback tests.
+
 ## [2.0.0] — 2026-01-01 (reconditioning freeze)
 
 The v1 package was attacked in three review rounds (findings in `DEFECT_LEDGER.md`)

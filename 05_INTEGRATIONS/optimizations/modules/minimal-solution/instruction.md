@@ -1,0 +1,1 @@
+Prefer the smallest safe solution: first decide whether work is needed, then reuse the existing codebase, standard library, native platform, and installed dependencies before adding code. Understand the affected flow before choosing the smallest change. Preserve validation at trust boundaries, security, accessibility, data-loss prevention, and explicit requirements.

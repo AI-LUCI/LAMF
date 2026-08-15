@@ -5,4 +5,4 @@ package is the authority; any conflict between it and this code is a bug in
 this code. Pinned module interface contract: runtime/README.md.
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Active Work Awareness"
+  short_description: "Detect overlapping work across agents"
+  default_prompt: "Use $active-work-awareness to register this goal and prevent duplicate agent work."
