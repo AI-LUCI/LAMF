@@ -34,10 +34,13 @@ from __future__ import annotations
 
 import json
 import base64
+import hashlib
+import hmac
 import os
 import re
 import sqlite3
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -62,15 +65,20 @@ _QUERY_STOPWORDS = frozenset({
     "in", "is", "it", "of", "on", "or", "plan", "planning", "project",
     "projects", "the", "this", "to", "what", "with",
 })
+_BLIND_TOKEN_HEX_CHARS = 24  # 96 keyed bits; collision floor exceeds record-id UUIDs
+_BLIND_TOKEN_CACHE_MAX = 65536
 
 
-def natural_fts_query(query: str) -> str:
-    """Turn ordinary natural language into a safe broad FTS candidate query.
+def natural_index_words(value: str) -> list[str]:
+    """Normalize the complete token stream for keyed contentless FTS."""
+    value = unicodedata.normalize("NFKC", str(value or ""))
+    return [word.casefold() for word in
+            re.findall(r"[^\W_]+", value, flags=re.UNICODE)]
 
-    FTS5 whitespace means AND, which made multi-topic prompts return nothing.
-    Candidate generation should favor recall; policy/state checks still decide
-    which records may be returned.
-    """
+
+def natural_search_terms(query: str) -> list[str]:
+    """Normalize a query into bounded blind-index terms."""
+    query = unicodedata.normalize("NFKC", str(query or ""))
     words = re.findall(r"[^\W_]+", str(query or ""), flags=re.UNICODE)
     useful = []
     for word in words:
@@ -80,11 +88,15 @@ def natural_fts_query(query: str) -> str:
         useful.append(folded)
     if not useful:
         useful = [w.casefold() for w in words if len(w) >= 2]
-    return " OR ".join('"' + w.replace('"', ' ') + '"' for w in useful[:24])
+    return useful[:24]
 
 
 class StoreError(Exception):
     pass
+
+
+class MigrationRequired(StoreError):
+    """Raised when a protocol-2 database needs the explicit v3 migration."""
 
 
 def _now_ms() -> int:
@@ -102,6 +114,179 @@ def _resolve_schema_path(schema_path: str) -> Path:
     if p.exists():
         return p
     raise FileNotFoundError(f"schema not found: {schema_path}")
+
+
+def _column_names(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def needs_protocol3_migration(db_path) -> bool:
+    """Return whether an initialized database still uses plaintext metadata."""
+    path = Path(db_path)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    conn = sqlite3.connect(str(path))
+    try:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        return "records" in tables and "metadata_enc" not in _column_names(conn, "records")
+    finally:
+        conn.close()
+
+
+def migrate_protocol3(db_path, instance_key: InstanceKey, backup_path=None) -> Path:
+    """Atomically migrate a protocol-2 database to encrypted metadata/search.
+
+    A verified SQLite backup is created before any schema or data mutation.
+    The instance key is reused so existing encrypted bodies and wrapped record
+    keys remain valid. The function is idempotent for an already-v3 database.
+    """
+    db_path = Path(db_path)
+    if not needs_protocol3_migration(db_path):
+        return Path(backup_path) if backup_path else db_path
+    if instance_key is None:
+        raise StoreError("protocol-3 migration requires the instance key")
+    backup = Path(backup_path) if backup_path else db_path.with_name(
+        f"{db_path.name}.pre-v3.{_now_ms()}.sqlite")
+    if backup.exists():
+        raise StoreError(f"migration backup already exists: {backup}")
+    backup.parent.mkdir(parents=True, exist_ok=True)
+
+    source = sqlite3.connect(str(db_path))
+    target = sqlite3.connect(str(backup))
+    try:
+        source.backup(target)
+        if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise StoreError("pre-migration backup failed integrity_check")
+    finally:
+        target.close()
+        source.close()
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    store = Store(conn, db_path, instance_key)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("ALTER TABLE records ADD COLUMN metadata_enc BLOB")
+        conn.execute("ALTER TABLE record_versions ADD COLUMN metadata_enc BLOB")
+        conn.execute("DROP TABLE IF EXISTS records_fts")
+        conn.execute("""CREATE VIRTUAL TABLE record_search_fts USING fts5(
+            title, body, tags, entities, content='',
+            tokenize='unicode61')""")
+
+        rows = conn.execute("SELECT * FROM records").fetchall()
+        for row in rows:
+            data_key = store._data_key_for(row["id"])
+            tags = json.loads(row["tags"] or "[]")
+            entities = json.loads(row["entities"] or "[]")
+            metadata = json.dumps({"title": row["title"], "tags": tags,
+                                   "entities": entities}, ensure_ascii=False,
+                                  separators=(",", ":")).encode("utf-8")
+            metadata_enc = store._aead_encrypt(data_key, metadata)
+            body = store._aead_decrypt(data_key, row["body_enc"]).decode("utf-8")
+            conn.execute("UPDATE records SET title='[encrypted]', tags='[]', "
+                         "entities='[]', metadata_enc=? WHERE id=?",
+                         (metadata_enc, row["id"]))
+            if row["state"] != "tombstoned":
+                store._search_refresh(row["id"], row["title"], body, tags, entities)
+
+        versions = conn.execute("SELECT * FROM record_versions").fetchall()
+        for row in versions:
+            data_key = store._data_key_for(row["record_id"])
+            metadata = json.dumps({
+                "title": row["title"],
+                "tags": json.loads(row["tags"] or "[]"),
+                "entities": json.loads(row["entities"] or "[]"),
+            }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            conn.execute("UPDATE record_versions SET title='[encrypted]', tags='[]', "
+                         "entities='[]', metadata_enc=? WHERE record_id=? AND version=?",
+                         (store._aead_encrypt(data_key, metadata), row["record_id"],
+                          row["version"]))
+        nulls = conn.execute("SELECT COUNT(*) FROM records WHERE metadata_enc IS NULL").fetchone()[0]
+        nulls += conn.execute(
+            "SELECT COUNT(*) FROM record_versions WHERE metadata_enc IS NULL").fetchone()[0]
+        if nulls:
+            raise StoreError("protocol-3 migration left unencrypted metadata")
+        conn.execute("INSERT OR REPLACE INTO schema_migrations "
+                     "(version, applied_at, description) VALUES (3, ?, ?)",
+                     (_now_ms(), "protocol 3 encrypted metadata and keyed FTS"))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return backup
+
+
+def needs_keyed_fts_migration(db_path) -> bool:
+    """Return whether an encrypted protocol-3 store uses the legacy term table."""
+    path = Path(db_path)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    conn = sqlite3.connect(str(path))
+    try:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+        return ("records" in tables and "metadata_enc" in _column_names(conn, "records")
+                and "record_search_fts" not in tables)
+    finally:
+        conn.close()
+
+
+def migrate_keyed_fts(db_path, instance_key: InstanceKey, backup_path=None) -> Path:
+    """Back up and replace the legacy blind-term table with keyed FTS5."""
+    db_path = Path(db_path)
+    if not needs_keyed_fts_migration(db_path):
+        return Path(backup_path) if backup_path else db_path
+    if instance_key is None:
+        raise StoreError("keyed-FTS migration requires the instance key")
+    backup = Path(backup_path) if backup_path else db_path.with_name(
+        f"{db_path.name}.pre-keyed-fts.{_now_ms()}.sqlite")
+    if backup.exists():
+        raise StoreError(f"migration backup already exists: {backup}")
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    source = sqlite3.connect(str(db_path))
+    target = sqlite3.connect(str(backup))
+    try:
+        source.backup(target)
+        if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise StoreError("pre-migration backup failed integrity_check")
+    finally:
+        target.close()
+        source.close()
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    store = Store(conn, db_path, instance_key)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""CREATE VIRTUAL TABLE record_search_fts USING fts5(
+            title, body, tags, entities, content='',
+            tokenize='unicode61')""")
+        for row in conn.execute("SELECT * FROM records").fetchall():
+            if row["state"] == "tombstoned":
+                continue
+            public = store._row_to_record(row)
+            store._search_refresh(row["id"], public["title"], public["body"],
+                                  public["tags"], public["entities"])
+        conn.execute("DROP TRIGGER IF EXISTS record_search_terms_purge_tombstone")
+        conn.execute("DROP TABLE IF EXISTS record_search_terms")
+        conn.execute("INSERT OR REPLACE INTO schema_migrations "
+                     "(version, applied_at, description) VALUES (4, ?, ?)",
+                     (_now_ms(), "contentless keyed FTS5 search index"))
+        conn.commit()
+        # Reclaim pages formerly owned by the legacy term table. The verified
+        # backup above remains the rollback boundary if compaction is interrupted.
+        conn.execute("VACUUM")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return backup
 
 
 class Store:
@@ -145,17 +330,33 @@ class Store:
                 conn.execute("PRAGMA journal_mode = DELETE")
             except sqlite3.OperationalError:
                 pass
+            if "metadata_enc" not in _column_names(conn, "records"):
+                conn.close()
+                raise MigrationRequired(
+                    f"protocol-2 database at {db_path} requires explicit "
+                    "`lamf migrate-v3 --data-dir ...` before use")
+            tables = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+            if "record_search_fts" not in tables:
+                conn.close()
+                raise MigrationRequired(
+                    f"protocol-3 database at {db_path} requires explicit "
+                    "`lamf migrate-v3 --data-dir ...` to build keyed FTS")
         if instance_key is None:
             key_path = db_path.parent / "instance.key"
             if key_path.exists():
                 instance_key = InstanceKey.load(key_path)
-        return cls(conn, db_path, instance_key)
+        store = cls(conn, db_path, instance_key)
+        if instance_key is not None:
+            store.ensure_search_index()
+        return store
 
     def __init__(self, conn: sqlite3.Connection, db_path: Path,
                  instance_key: Optional[InstanceKey]):
         self.conn = conn
         self.db_path = db_path
         self.key = instance_key
+        self._blind_token_cache: Dict[str, str] = {}
 
     def close(self):
         self.conn.close()
@@ -449,13 +650,36 @@ class Store:
         if rec.get("confidence", "medium") not in CONFIDENCES:
             raise StoreError(f"confidence must be one of {CONFIDENCES}")
 
-    def _fts_refresh(self, rowid: int, title: str, body: str, tags: str, entities: str):
-        """records_fts is app-maintained for insert/refresh (SCHEMA.sql: the
-        ingester owns it inside the write transaction); triggers own deletes."""
-        self.conn.execute("DELETE FROM records_fts WHERE rowid = ?", (rowid,))
+    def _blind_hash(self, term: str) -> str:
+        cached = self._blind_token_cache.get(term)
+        if cached is not None:
+            return cached
+        key = self._require_key().derive_key("blind-search-v1")
+        token = hmac.new(key, term.encode("utf-8"), hashlib.sha256).hexdigest()[
+            :_BLIND_TOKEN_HEX_CHARS]
+        if len(self._blind_token_cache) >= _BLIND_TOKEN_CACHE_MAX:
+            self._blind_token_cache.clear()
+        self._blind_token_cache[term] = token
+        return token
+
+    def _blind_text(self, value: str) -> str:
+        return " ".join(self._blind_hash(term)
+                        for term in natural_index_words(value))
+
+    def _search_refresh(self, record_id: str, title: str, body: str,
+                        tags: list, entities: list) -> None:
+        """Refresh contentless keyed FTS without persisting plaintext terms."""
+        row = self.conn.execute("SELECT rowid FROM records WHERE id = ?",
+                                (record_id,)).fetchone()
+        if row is None:
+            raise StoreError(f"cannot index unknown record {record_id}")
+        rowid = int(row["rowid"])
         self.conn.execute(
-            "INSERT INTO records_fts (rowid, title, body, tags, entities)"
-            " VALUES (?,?,?,?,?)", (rowid, title, body, tags, entities))
+            "INSERT INTO record_search_fts(rowid,title,body,tags,entities) "
+            "VALUES (?,?,?,?,?)",
+            (rowid, self._blind_text(title), self._blind_text(body),
+             self._blind_text(" ".join(str(v) for v in tags)),
+             self._blind_text(" ".join(str(v) for v in entities))))
 
     def upsert_record(self, rec: Dict[str, Any]) -> str:
         """Insert or replace a memory record head. PINNED SIGNATURE.
@@ -477,8 +701,12 @@ class Store:
         title = rec.get("title")
         if not title:
             raise StoreError("record title is required")
-        tags = json.dumps(rec.get("tags") or [])
-        entities = json.dumps(rec.get("entities") or [])
+        tags_value = rec.get("tags") or []
+        entities_value = rec.get("entities") or []
+        if not isinstance(tags_value, list) or not isinstance(entities_value, list):
+            raise StoreError("record tags and entities must be arrays")
+        tags = json.dumps(tags_value)
+        entities = json.dumps(entities_value)
         scope = rec.get("scope") or "user:default"
         owner = rec.get("owner_actor") or "lamf-system"
         sensitivity = rec.get("sensitivity", "ordinary")
@@ -499,13 +727,16 @@ class Store:
             else:
                 data_key = self._data_key_for(rec_id)
             body_enc = self._aead_encrypt(data_key, body.encode("utf-8"))
+            metadata_enc = self._aead_encrypt(data_key, json.dumps({
+                "title": title, "tags": tags_value, "entities": entities_value,
+            }, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
             if old is None:
                 cur = self.conn.execute(
-                    "INSERT INTO records (id, type, title, body_enc, tags, entities,"
+                    "INSERT INTO records (id, type, title, body_enc, metadata_enc, tags, entities,"
                     " scope, owner_actor, sensitivity, taint, state, version,"
                     " supersedes, source_events, confidence, created_seq, updated_seq,"
-                    " expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (rec_id, rec["type"], title, body_enc, tags, entities, scope,
+                    " expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (rec_id, rec["type"], "[encrypted]", body_enc, metadata_enc, "[]", "[]", scope,
                      owner, sensitivity, taint, state, version,
                      rec.get("supersedes"), source_events, confidence,
                      created_seq, seq, expires_at))
@@ -513,20 +744,26 @@ class Store:
             else:
                 rowid = old["rowid"]
                 self.conn.execute(
-                    "UPDATE records SET type=?, title=?, body_enc=?, tags=?, entities=?,"
+                    "UPDATE records SET type=?, title=?, body_enc=?, metadata_enc=?, tags=?, entities=?,"
                     " scope=?, owner_actor=?, sensitivity=?, taint=?, state=?, version=?,"
                     " supersedes=?, source_events=?, confidence=?, updated_seq=?,"
                     " expires_at=? WHERE id = ?",
-                    (rec["type"], title, body_enc, tags, entities, scope, owner,
+                    (rec["type"], "[encrypted]", body_enc, metadata_enc, "[]", "[]", scope, owner,
                      sensitivity, taint, state, version, rec.get("supersedes"),
                      source_events, confidence, seq, expires_at, rec_id))
             self.conn.execute(
                 "INSERT OR REPLACE INTO record_versions (record_id, version, title,"
-                " body_enc, tags, entities, state, sensitivity, taint, changed_seq)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (rec_id, version, title, body_enc, tags, entities, state,
+                " body_enc, metadata_enc, tags, entities, state, sensitivity, taint, changed_seq)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (rec_id, version, "[encrypted]", body_enc, metadata_enc, "[]", "[]", state,
                  sensitivity, taint, seq))
-            self._fts_refresh(rowid, title, body, tags, entities)
+            if old is None and state != "tombstoned":
+                self._search_refresh(rec_id, title, body, tags_value, entities_value)
+            elif old is not None:
+                # Portable contentless FTS5 (SQLite <3.43 included) cannot
+                # delete a row without its prior token columns. Rebuild the
+                # disposable index on the uncommon update/tombstone path.
+                self.rebuild_search_index()
         return rec_id
 
     def supersede(self, record_id: str, new_rec: Dict[str, Any], reason: str) -> str:
@@ -540,13 +777,14 @@ class Store:
             raise StoreError(f"record {record_id} is tombstoned (terminal)")
         from .spine import uuid7
         new_id = new_rec.get("id") or "rec_" + uuid7().replace("-", "")
+        old_public = self._row_to_record(old)
         merged = {
             "id": new_id,
             "type": new_rec.get("type", old["type"]),
-            "title": new_rec.get("title", old["title"]),
+            "title": new_rec.get("title", old_public["title"]),
             "body": new_rec.get("body", self._decrypt_body(old)),
-            "tags": new_rec.get("tags", json.loads(old["tags"])),
-            "entities": new_rec.get("entities", json.loads(old["entities"])),
+            "tags": new_rec.get("tags", old_public["tags"]),
+            "entities": new_rec.get("entities", old_public["entities"]),
             "scope": new_rec.get("scope", old["scope"]),
             "owner_actor": new_rec.get("owner_actor", old["owner_actor"]),
             "sensitivity": new_rec.get("sensitivity", old["sensitivity"]),
@@ -571,10 +809,13 @@ class Store:
         return self._aead_decrypt(self._data_key_for(row["id"]), row["body_enc"]).decode("utf-8")
 
     def _row_to_record(self, row: sqlite3.Row) -> Dict[str, Any]:
+        data_key = self._data_key_for(row["id"])
+        metadata = json.loads(self._aead_decrypt(
+            data_key, row["metadata_enc"]).decode("utf-8"))
         return {
-            "id": row["id"], "type": row["type"], "title": row["title"],
-            "body": self._decrypt_body(row),
-            "tags": json.loads(row["tags"]), "entities": json.loads(row["entities"]),
+            "id": row["id"], "type": row["type"], "title": metadata["title"],
+            "body": self._aead_decrypt(data_key, row["body_enc"]).decode("utf-8"),
+            "tags": metadata.get("tags", []), "entities": metadata.get("entities", []),
             "scope": row["scope"], "owner_actor": row["owner_actor"],
             "sensitivity": row["sensitivity"], "taint": row["taint"],
             "state": row["state"], "version": row["version"],
@@ -600,9 +841,10 @@ class Store:
                     "SELECT * FROM record_versions WHERE record_id = ? ORDER BY version DESC",
                     (record_id,)):
                 hist.append({
-                    "version": v["version"], "title": v["title"],
+                    "version": v["version"],
+                    **json.loads(self._aead_decrypt(
+                        data_key, v["metadata_enc"]).decode("utf-8")),
                     "body": self._aead_decrypt(data_key, v["body_enc"]).decode("utf-8"),
-                    "tags": json.loads(v["tags"]), "entities": json.loads(v["entities"]),
                     "state": v["state"], "sensitivity": v["sensitivity"],
                     "taint": v["taint"], "changed_seq": v["changed_seq"],
                 })
@@ -659,14 +901,26 @@ class Store:
                      "ELSE 99 END <= ?")
         params.append(sensitivity_rank[sensitivity_max])
         cond = ("AND " + " AND ".join(where)) if where else ""
-        sql = (
-            "SELECT r.*, -bm25(records_fts) AS score FROM records_fts f"
-            " JOIN records r ON r.rowid = f.rowid"
-            " WHERE records_fts MATCH ? " + cond +
-            " ORDER BY score DESC LIMIT ?")
-        candidate_query = natural_fts_query(query)
-        if not candidate_query:
+        terms = natural_search_terms(query)
+        if not terms:
             return []
+        hashes = [self._blind_hash(term) for term in terms]
+        candidate_query = " OR ".join(f'"{token}"' for token in hashes)
+        # Identifiers are fixed above; every external value uses a placeholder.
+        # Rank narrow rows first, then fetch the encrypted record payloads for
+        # only the winners.  Grouping ``r.*`` made SQLite carry large encrypted
+        # body/metadata blobs through its temporary GROUP BY and ORDER BY
+        # B-trees; on the LongMemEval fixture that dominated query latency.
+        # The CTE preserves the same score, filters, ordering, and limit while
+        # keeping the ranking working set to (record_id, score, updated_seq).
+        sql = (  # nosec B608
+            "WITH ranked AS (SELECT f.rowid, -bm25(record_search_fts) AS score "
+            "FROM record_search_fts f JOIN records r ON r.rowid = f.rowid "
+            "WHERE record_search_fts MATCH ? " + cond +
+            " ORDER BY score DESC, r.updated_seq DESC LIMIT ?) "
+            "SELECT r.*, ranked.score FROM ranked "
+            "JOIN records r ON r.rowid = ranked.rowid "
+            "ORDER BY ranked.score DESC, r.updated_seq DESC")
         rows = self.conn.execute(
             sql, [candidate_query, *params, int(limit)]).fetchall()
         out = []
@@ -675,6 +929,61 @@ class Store:
             rec["score"] = row["score"]
             out.append(rec)
         return out
+
+    def search_index_health(self) -> Dict[str, Any]:
+        """Check keyed-FTS structure and row coverage against record heads."""
+        expected = int(self.conn.execute(
+            "SELECT COUNT(*) FROM records WHERE state != 'tombstoned'").fetchone()[0])
+        try:
+            actual = int(self.conn.execute(
+                "SELECT COUNT(*) FROM record_search_fts").fetchone()[0])
+            was_in_transaction = self.conn.in_transaction
+            self.conn.execute(
+                "INSERT INTO record_search_fts(record_search_fts) "
+                "VALUES('integrity-check')")
+            if not was_in_transaction:
+                self.conn.commit()
+            integrity = True
+        except sqlite3.DatabaseError:
+            actual = -1
+            integrity = False
+        return {"healthy": integrity and actual == expected,
+                "integrity": integrity, "expected_rows": expected,
+                "actual_rows": actual}
+
+    def ensure_search_index(self) -> bool:
+        """Automatically rebuild an incomplete/corrupt derived search index.
+
+        Returns True when recovery was performed. Encrypted record heads remain
+        authoritative and are never changed by this operation.
+        """
+        health = self.search_index_health()
+        if health["healthy"]:
+            return False
+        self.rebuild_search_index(recreate=not health["integrity"])
+        verified = self.search_index_health()
+        if not verified["healthy"]:
+            raise StoreError(f"keyed FTS recovery verification failed: {verified}")
+        return True
+
+    def rebuild_search_index(self, recreate: bool = False) -> int:
+        """Rebuild keyed FTS from encrypted record heads; return row count."""
+        rows = self.conn.execute(
+            "SELECT * FROM records WHERE state != 'tombstoned'").fetchall()
+        with self.conn:
+            if recreate:
+                self.conn.execute("DROP TABLE IF EXISTS record_search_fts")
+                self.conn.execute("""CREATE VIRTUAL TABLE record_search_fts USING fts5(
+                    title, body, tags, entities, content='',
+                    tokenize='unicode61')""")
+            else:
+                self.conn.execute(
+                    "INSERT INTO record_search_fts(record_search_fts) VALUES('delete-all')")
+            for row in rows:
+                public = self._row_to_record(row)
+                self._search_refresh(row["id"], public["title"], public["body"],
+                                     public["tags"], public["entities"])
+        return len(rows)
 
     def list_records(self, limit: int = 50, state: Optional[str] = "active") -> List[Dict[str, Any]]:
         """Return recent memory heads for the human library view.

@@ -8,6 +8,7 @@ time and never prevent LAMF from starting or serving memory.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 
@@ -44,7 +45,8 @@ def config_path(data_dir: Path) -> Path:
 
 
 def default_config() -> dict:
-    return {"version": CONFIG_VERSION, "enabled": True, "modules": {}}
+    # Protocol 3 is opt-in: core-only clients receive no optional prompt text.
+    return {"version": CONFIG_VERSION, "enabled": False, "modules": {}}
 
 
 def _env_bool(name: str):
@@ -92,7 +94,8 @@ def initialize(data_dir: Path) -> None:
 def _validate_module(directory: Path) -> tuple[dict | None, str | None]:
     try:
         manifest = json.loads((directory / "module.json").read_text(encoding="utf-8"))
-        required = {"id", "version", "default_enabled", "instruction_file"}
+        required = {"id", "version", "default_enabled", "instruction_file",
+                    "instruction_sha256"}
         missing = required - set(manifest)
         if missing:
             raise ValueError(f"missing manifest fields: {', '.join(sorted(missing))}")
@@ -106,6 +109,12 @@ def _validate_module(directory: Path) -> tuple[dict | None, str | None]:
             raise ValueError("instruction fragment is empty")
         if len(instruction) > MAX_FRAGMENT_CHARS:
             raise ValueError(f"instruction fragment exceeds {MAX_FRAGMENT_CHARS} characters")
+        # Git may materialize text files with CRLF on Windows. Pin the semantic
+        # UTF-8/LF payload so the same signed module remains valid cross-platform.
+        canonical_bytes = instruction_path.read_bytes().replace(b"\r\n", b"\n")
+        actual = hashlib.sha256(canonical_bytes).hexdigest()
+        if actual != str(manifest["instruction_sha256"]).lower():
+            raise ValueError("instruction fragment hash mismatch")
         manifest["instruction"] = instruction
         return manifest, None
     except Exception as exc:

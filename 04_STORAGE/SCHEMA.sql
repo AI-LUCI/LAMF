@@ -1,5 +1,5 @@
 -- ============================================================================
--- LAMF 2.0.0 — SQLite storage schema (04_STORAGE/SCHEMA.sql)
+-- LAMF 3.0.0 — SQLite storage schema (04_STORAGE/SCHEMA.sql)
 -- Normative per DECISIONS.md §G/§H/§J/§L/§M/§N, amended by §U (Round-2):
 --   U-02 events_fts contentless; U-05 payload_json never SQL-NULL;
 --   U-06 identity_links partial-unique; U-07 actors.kind 'system';
@@ -137,15 +137,16 @@ CREATE TABLE records (
                       'fact', 'preference', 'identity', 'relationship',
                       'decision', 'task', 'procedure', 'failure_lesson',
                       'episode', 'handoff_record', 'council_record')),
-    title         TEXT NOT NULL,
+    title         TEXT NOT NULL DEFAULT '[encrypted]',
     -- U-08(a): body is encrypted at the field level so per-record erasure
     -- (crypto-shredding the data key in record_keys) makes it unrecoverable.
     -- Construction: AES-256-GCM under the record's per-record data key;
     -- a random 96-bit nonce per message, NEVER reused under the same key,
     -- is prepended to the ciphertext: body_enc = nonce(12) || ct || tag(16).
     body_enc      BLOB NOT NULL,
-    tags          TEXT NOT NULL DEFAULT '[]',  -- JSON array
-    entities      TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    metadata_enc  BLOB NOT NULL,               -- encrypted {title,tags,entities}
+    tags          TEXT NOT NULL DEFAULT '[]',  -- non-sensitive sentinel
+    entities      TEXT NOT NULL DEFAULT '[]',  -- non-sensitive sentinel
     scope         TEXT NOT NULL,
     owner_actor   TEXT NOT NULL REFERENCES actors(actor_id),
     sensitivity   TEXT NOT NULL CHECK (sensitivity IN ('ordinary', 'sensitive', 'restricted')),
@@ -170,11 +171,12 @@ CREATE TABLE records (
 CREATE TABLE record_versions (
     record_id   TEXT NOT NULL REFERENCES records(id),
     version     INTEGER NOT NULL CHECK (version >= 1),
-    title       TEXT NOT NULL,
+    title       TEXT NOT NULL DEFAULT '[encrypted]',
     body_enc    BLOB NOT NULL,                 -- U-08(a): same AES-256-GCM
                                                -- construction as records.body_enc
                                                -- (random 96-bit nonce per message,
                                                -- never reused)
+    metadata_enc BLOB NOT NULL,
     tags        TEXT NOT NULL DEFAULT '[]',
     entities    TEXT NOT NULL DEFAULT '[]',
     state       TEXT NOT NULL CHECK (state IN (
@@ -485,49 +487,29 @@ CREATE TABLE policy_state (
 );
 
 -- ----------------------------------------------------------------------------
--- [REBUILDABLE] FTS5 full-text indexes — droppable and rebuildable at any time.
+-- [REBUILDABLE] privacy-preserving search indexes.
 -- U-02/U-08 layout:
 --   * events_fts is CONTENTLESS (content=''); triggers own ALL sync. Because
 --     U-08(b) forces sensitive/restricted payloads into encrypted payload_ref
 --     blobs, events_fts only ever indexes ordinary inline payload text.
---   * records_fts stores its own content (no external-content table): records
---     .body is now body_enc (AES-256-GCM, U-08a), so SQL triggers cannot index
---     the body. The INGESTER (which holds the per-record data key inside the
---     write transaction) owns records_fts row INSERT/refresh; SQL triggers own
---     the DELETE paths so erasure can never leave FTS residue (U-08c). An FTS
---     index inherently contains searchable terms, which is exactly why the
---     tombstone-purge triggers below are mandatory.
+--   * record_search_fts is CONTENTLESS and stores only compact, keyed
+--     HMAC-SHA256 tokens produced with an instance-derived search key. Raw
+--     SQLite access reveals neither record bodies nor vocabulary. FTS5 keeps
+--     only its compressed term dictionary/postings and supplies native BM25.
 -- ----------------------------------------------------------------------------
 
--- records_fts: app-maintained inserts; trigger-maintained deletes.
-CREATE VIRTUAL TABLE records_fts USING fts5(
+CREATE VIRTUAL TABLE record_search_fts USING fts5(
     title, body, tags, entities,
+    content = '',
     tokenize = 'unicode61'
 );
-
--- Row deletion always drops the FTS row.
-CREATE TRIGGER records_fts_ad AFTER DELETE ON records BEGIN
-    DELETE FROM records_fts WHERE rowid = old.rowid;
-END;
--- U-08(c) purge-on-tombstone: the moment a record is tombstoned its FTS row is
--- removed, so crypto-shredded content is never searchable.
-CREATE TRIGGER records_fts_purge_tombstone
-AFTER UPDATE OF state ON records WHEN new.state = 'tombstoned' BEGIN
-    DELETE FROM records_fts WHERE rowid = old.rowid;
-END;
 -- U-08(d): tombstone also purges the record's cached embeddings.
 CREATE TRIGGER embedding_cache_purge_tombstone
 AFTER UPDATE OF state ON records WHEN new.state = 'tombstoned' BEGIN
     DELETE FROM embedding_cache WHERE record_id = old.id;
 END;
--- records_fts insert/refresh (ingester, same write transaction as the record
--- write, body decrypted with the record's data key):
---   DELETE FROM records_fts WHERE rowid = :rowid;   -- refresh path
---   INSERT INTO records_fts(rowid, title, body, tags, entities)
---   VALUES (:rowid, :title, :body_plaintext, :tags, :entities);
--- records_fts rebuild: DELETE FROM records_fts; then the ingester re-indexes
--- every non-tombstoned record from decrypted content (requires data keys, so
--- repopulation is application-side, not a SQL statement).
+-- Keyed-FTS refresh/rebuild is application-side and requires the instance
+-- key. Search terms and original keyed-token streams are never persisted.
 
 CREATE VIRTUAL TABLE events_fts USING fts5(
     payload_text, actor, type, scope, session,
@@ -556,6 +538,10 @@ END;
 -- ----------------------------------------------------------------------------
 INSERT INTO schema_migrations (version, applied_at, description)
 VALUES (1, 0, 'LAMF 2.0.0 base schema (DECISIONS.md §A/§G/§H/§J/§L/§N + §U Round-2)');
+INSERT INTO schema_migrations (version, applied_at, description)
+VALUES (3, 0, 'LAMF 3.0.0 encrypted metadata and keyed search');
+INSERT INTO schema_migrations (version, applied_at, description)
+VALUES (4, 0, 'Contentless keyed FTS5 search index');
 
 -- Single-row state seeds (U-17): the ingester watermark starts at 0 and the
 -- policy head at version 1 (init policy, no policy_change events yet).

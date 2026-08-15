@@ -51,6 +51,22 @@ TOP_FILES = {
     "DEFECT_LEDGER.md", "EVALUATION_REPORT.md", "MANIFEST.sha256",
 }
 
+IGNORED_TREE_PREFIXES = (
+    ".git/", ".agent-runs/", ".artifacts/", ".pytest_cache/", ".test-runs/",
+    "build/", "comparative-benchmark/", "data/", "data-pre-v3-legacy-", "dist/",
+    "runtime/.venv/",
+)
+
+
+def package_file(root: Path, path: Path) -> bool:
+    """True for shipped package files, excluding local runtime/test state."""
+    if not path.is_file():
+        return False
+    rel = path.relative_to(root).as_posix()
+    return (not rel.startswith(IGNORED_TREE_PREFIXES)
+            and not rel.startswith("lamf-smoke-")
+            and "__pycache__" not in path.parts and path.suffix != ".pyc")
+
 
 def fail(check, msg):
     FAILURES.append((check, msg))
@@ -64,6 +80,7 @@ PLACEHOLDERS = {
     "FILE.lamf", "FILE.yaml", "my-memory.lamf", "evil.lamf", "notes.md",
     "security.custom.yaml", "OPEN_DECISIONS.md",  # builder-created from template
     "manifest.json",  # .lamf bundle-internal artifact name (not the package tree)
+    "lamf-install.json",  # installer-generated receipt
     "server.json",  # runtime deployment config (V-04); created by the operator, not shipped
 }
 SCAN_EXT = {".md", ".yaml", ".yml", ".json", ".sql", ".ts"}
@@ -105,10 +122,11 @@ def check_references(root: Path):
     # basename index: bare filenames resolve iff exactly one tree file has that name
     basename_index = {}
     for p in root.rglob("*"):
-        if p.is_file():
+        if package_file(root, p):
             basename_index.setdefault(p.name, []).append(p)
 
-    for f in sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in SCAN_EXT):
+    for f in sorted(p for p in root.rglob("*")
+                    if package_file(root, p) and p.suffix in SCAN_EXT):
         text = f.read_text(encoding="utf-8")
         tokens = token_re.findall(text) + link_re.findall(text)
         for tok in tokens:
@@ -449,7 +467,9 @@ def check_manifest(root: Path):
             fail(5, f"hash mismatch: {rel}")
     # Manifest paths are portable and always use forward slashes.  Path.__str__
     # uses backslashes on Windows, which made every valid entry look missing.
-    runtime_dirs = {"runtime/.venv", "data", ".test-runs", ".git"}
+    runtime_dirs = {"runtime/.venv", "data", ".test-runs", ".git",
+                    ".agent-runs", ".artifacts", ".pytest_cache", "build",
+                    "comparative-benchmark", "dist"}
     on_disk = {
         p.relative_to(root).as_posix()
         for p in root.rglob("*")
@@ -462,6 +482,7 @@ def check_manifest(root: Path):
             for d in runtime_dirs
         )
         and not p.relative_to(root).as_posix().startswith("lamf-smoke-")
+        and not p.relative_to(root).as_posix().startswith("data-pre-v3-legacy-")
         and p.relative_to(root).as_posix()
         != "05_INTEGRATIONS/optimizations/overlay/LamfOptimizationControls.exe"
     }
@@ -473,13 +494,16 @@ def check_manifest(root: Path):
 
 def write_manifest(root: Path):
     """Regenerate the portable package manifest after intentional edits."""
-    runtime_dirs = {"runtime/.venv", "data", ".test-runs", ".git"}
+    runtime_dirs = {"runtime/.venv", "data", ".test-runs", ".git",
+                    ".agent-runs", ".artifacts", ".pytest_cache", "build",
+                    "comparative-benchmark", "dist"}
     paths = sorted(
         p for p in root.rglob("*")
         if p.is_file()
         and "__pycache__" not in p.parts
         and p.suffix != ".pyc"
         and p.relative_to(root).as_posix() != "MANIFEST.sha256"
+        and not p.relative_to(root).as_posix().startswith("data-pre-v3-legacy-")
         and not any(p.relative_to(root).as_posix() == d or
                     p.relative_to(root).as_posix().startswith(d + "/")
                     for d in runtime_dirs)
@@ -506,7 +530,8 @@ def check_test_ids(root: Path):
     reg_path = root / "08_BUILD_PLAN/ACCEPTANCE_TESTS.md"
     registry = set(TID_RE.findall(reg_path.read_text(encoding="utf-8")))
     print(f"  registry: {len(registry)} defined test IDs")
-    for f in sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in SCAN_EXT):
+    for f in sorted(p for p in root.rglob("*")
+                    if package_file(root, p) and p.suffix in SCAN_EXT):
         if f == reg_path or f.name in META_FILES:
             continue
         for tid in set(TID_RE.findall(f.read_text(encoding="utf-8"))):
@@ -526,7 +551,8 @@ BANNED_PATTERNS = [
 def check_consistency(root: Path):
     print("check 7: cross-file consistency")
     # 7a: banned spellings
-    for f in sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in SCAN_EXT):
+    for f in sorted(p for p in root.rglob("*")
+                    if package_file(root, p) and p.suffix in SCAN_EXT):
         text = f.read_text(encoding="utf-8")
         for pat, label in BANNED_PATTERNS:
             for m in pat.finditer(text):
@@ -578,7 +604,8 @@ def check_r3_regressions(root: Path):
     print("check 8: round-3 regression guards")
     meta = {"DECISIONS.md", "DEFECT_LEDGER.md", "EVALUATION_REPORT.md",
             "CHANGELOG.md", "validate_package.py"}
-    scan = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in SCAN_EXT)
+    scan = sorted(p for p in root.rglob("*")
+                  if package_file(root, p) and p.suffix in SCAN_EXT)
     # 8a: schema $id base uniform (U-10f / R3-13)
     for f in (root / "03_CONTRACTS/schemas").glob("*.schema.json"):
         sid = json.loads(f.read_text(encoding="utf-8")).get("$id", "")

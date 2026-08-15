@@ -32,6 +32,7 @@ import json
 import os
 import secrets
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,6 +61,45 @@ def _data_dir(args) -> Path:
 
 def _err(msg: str) -> None:
     print(f"lamf: {msg}", file=sys.stderr)
+
+
+def _harden_secret_file(path: Path) -> None:
+    """Restrict a secret file to owner, SYSTEM, and Administrators.
+
+    POSIX uses mode 0600. Windows needs a real protected DACL: ``chmod`` only
+    toggles the read-only attribute there. A fresh FileSecurity object avoids
+    copying SACL entries that require SeSecurityPrivilege and previously made
+    recursive ACL approaches unreliable.
+    """
+    path = Path(path)
+    os.chmod(path, 0o600)
+    if os.name != "nt":
+        return
+    shell = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
+    if not shell:
+        raise RuntimeError("cannot protect secret: PowerShell is unavailable")
+    script = r"""
+$ErrorActionPreference='Stop'
+$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl=New-Object System.Security.AccessControl.FileSecurity
+$acl.SetOwner($sid)
+$acl.SetAccessRuleProtection($true,$false)
+foreach($id in @($sid,
+  (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')),
+  (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')))) {
+  $rule=New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $id,'FullControl','Allow')
+  [void]$acl.AddAccessRule($rule)
+}
+Set-Acl -LiteralPath $env:LAMF_SECRET_PATH -AclObject $acl
+"""
+    child_env = os.environ.copy()
+    child_env["LAMF_SECRET_PATH"] = str(path)
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=30, env=child_env)
+    if result.returncode:
+        raise RuntimeError(f"cannot protect secret {path}: {result.stderr.strip()}")
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +201,7 @@ def cmd_init(args) -> int:
     shutil.copyfile(src, data_dir / "policy.yaml")
 
     key = InstanceKey.generate(data_dir / "instance.key")
+    _harden_secret_file(data_dir / "instance.key")
 
     token = secrets.token_hex(32)  # 32-byte hex operator bearer token
     token_path = data_dir / "operator.token"
@@ -169,7 +210,7 @@ def cmd_init(args) -> int:
         os.write(fd, token.encode("ascii"))
     finally:
         os.close(fd)
-    os.chmod(token_path, 0o600)
+    _harden_secret_file(token_path)
 
     from .store import Store
     store = Store.open(data_dir / "lamf.db", instance_key=key)
@@ -197,9 +238,7 @@ def cmd_init(args) -> int:
 
     print(f"initialized {data_dir} (profile={policy.name}, policy_version=1)")
     print(f"instance fingerprint: {key.fingerprint()}")
-    print(f"operator token written to {token_path} (0600) — shown once:")
-    print(f"  {token}")
-    print()
+    print(f"operator token written securely to {token_path} (not displayed)")
     print("next steps:")
     print(f"  lamf capture --data-dir {data_dir} --text 'hello memory'")
     print(f"  lamf status  --data-dir {data_dir}")
@@ -264,6 +303,32 @@ def cmd_search(args) -> int:
         return EXIT_OK
     finally:
         ctx.store.close()
+
+
+def cmd_migrate_v3(args) -> int:
+    """Explicit, backed-up protocol-2 to protocol-3 data migration."""
+    data_dir = _data_dir(args)
+    db_path = data_dir / "lamf.db"
+    key_path = data_dir / "instance.key"
+    if not db_path.exists() or not key_path.exists():
+        _err(f"no initialized LAMF instance at {data_dir}")
+        return EXIT_PRECOND
+    from .store import (migrate_keyed_fts, migrate_protocol3,
+                        needs_keyed_fts_migration, needs_protocol3_migration)
+    if not needs_protocol3_migration(db_path) and not needs_keyed_fts_migration(db_path):
+        print(json.dumps({"migrated": False, "reason": "already_protocol_3",
+                          "data_dir": str(data_dir)}))
+        return EXIT_OK
+    key = InstanceKey.load(key_path)
+    if needs_protocol3_migration(db_path):
+        backup = migrate_protocol3(
+            db_path, key, Path(args.backup).expanduser() if args.backup else None)
+    else:
+        backup = migrate_keyed_fts(
+            db_path, key, Path(args.backup).expanduser() if args.backup else None)
+    print(json.dumps({"migrated": True, "protocol": 3,
+                      "data_dir": str(data_dir), "backup": str(backup)}))
+    return EXIT_OK
 
 
 def cmd_remember(args) -> int:
@@ -708,12 +773,19 @@ def build_parser() -> argparse.ArgumentParser:
     # every subcommand also accepts --data-dir (noob-friendly: order-free);
     # argparse only applies the subparser default if unset, so the global wins
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--data-dir", default=None, help=argparse.SUPPRESS)
+    common.add_argument("--data-dir", default=argparse.SUPPRESS,
+                        help=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("init", parents=[common], help="initialize a data dir")
     sp.add_argument("--profile", choices=PROFILES_CHOICES, default="controlled")
     sp.set_defaults(func=cmd_init)
+
+    sp = sub.add_parser("migrate-v3", parents=[common],
+                        help="back up and migrate a protocol-2 data dir to protocol 3")
+    sp.add_argument("--backup", default=None,
+                    help="explicit backup database path (must not already exist)")
+    sp.set_defaults(func=cmd_migrate_v3)
 
     sp = sub.add_parser("serve", parents=[common], help="run the HTTP API + ingester (api.serve)")
     sp.add_argument("--host", default="127.0.0.1")

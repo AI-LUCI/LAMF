@@ -16,7 +16,8 @@ from lamf import optimizations  # noqa: E402
 
 EXTERNAL_MODULES = Path(os.environ.get(
     "LAMF_OPTIMIZATION_PACK_SOURCE",
-    "E:/LAMF-Optimizations-GitHub/optimizations/modules",
+    str(Path(__file__).resolve().parents[2] /
+        "05_INTEGRATIONS" / "optimizations" / "modules"),
 ))
 
 
@@ -95,13 +96,18 @@ def test_source_mode_uses_resolved_root() -> None:
             data = Path(td) / "data"
             optimizations.initialize(data)
             initial = optimizations.status(data)
-            assert initial["enabled"]
+            assert not initial["enabled"]
             expected_ids = {
+                "active-work-awareness",
                 "minimal-solution", "selective-workflows", "stale-context-guards",
                 "surgical-changes", "verified-execution",
             }
             assert {item["id"] for item in initial["modules"]} == expected_ids
-            assert all(item["enabled"] and item["valid"] for item in initial["modules"])
+            assert all(not item["enabled"] and item["valid"] for item in initial["modules"])
+
+            optimizations.set_global(data, True)
+            for module_id in expected_ids:
+                optimizations.set_module(data, module_id, True)
 
             optimizations.set_module(data, "minimal-solution", False)
             text = optimizations.compiled_instructions(data)
@@ -133,12 +139,16 @@ def test_isolated_module_switching() -> None:
             data = Path(td) / "data"
             optimizations.initialize(data)
             expected_ids = {
+                "active-work-awareness",
                 "minimal-solution", "selective-workflows", "stale-context-guards",
                 "surgical-changes", "verified-execution",
             }
             for module_id in sorted(expected_ids):
                 isolated_data = Path(td) / f"isolated-{module_id}"
                 optimizations.initialize(isolated_data)
+                optimizations.set_global(isolated_data, True)
+                for enabled_id in expected_ids:
+                    optimizations.set_module(isolated_data, enabled_id, True)
                 optimizations.set_module(isolated_data, module_id, False)
                 states = {
                     item["id"]: item["enabled"]
@@ -155,10 +165,13 @@ def test_module_validation() -> None:
         bad = root / "bad"
         good.mkdir(parents=True)
         bad.mkdir(parents=True)
+        (good / "instruction.md").write_text("healthy", encoding="utf-8")
+        import hashlib
+        digest = hashlib.sha256((good / "instruction.md").read_bytes()).hexdigest()
         (good / "module.json").write_text(json.dumps({
             "id": "good", "version": "1", "default_enabled": True,
-            "instruction_file": "instruction.md"}), encoding="utf-8")
-        (good / "instruction.md").write_text("healthy", encoding="utf-8")
+            "instruction_file": "instruction.md",
+            "instruction_sha256": digest}), encoding="utf-8")
         (bad / "module.json").write_text("{}", encoding="utf-8")
         found = {item["id"]: item for item in optimizations.discover(root)}
         assert found["good"]["error"] is None

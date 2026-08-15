@@ -186,8 +186,9 @@ def _read_events_from_table(ctx, data_dir: Path) -> list:
                               "payload_ref", "payload_sha256", "prev_hash",
                               "hash", "sig", "channel_json", "sanitizer_note",
                               "capture_sig") if c in cols]
-        rows = conn.execute(
-            f"SELECT {', '.join(fields)} FROM events ORDER BY seq").fetchall()
+        # ``fields`` is selected exclusively from the fixed tuple above.
+        rows = conn.execute(  # nosec B608
+            f"SELECT {', '.join(fields)} FROM events ORDER BY seq").fetchall()  # nosec B608
         events = []
         for row in rows:
             d = dict(zip(fields, row))

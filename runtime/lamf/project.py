@@ -217,27 +217,24 @@ def _all_records(store) -> list:
                               "source_events", "confidence", "expires_at",
                               "created_seq", "updated_seq")
                   if c in cols]
-        rows = conn.execute(
-            f"SELECT {', '.join(select)} FROM records "
+        # ``select`` is selected exclusively from the fixed tuple above.
+        rows = conn.execute(  # nosec B608
+            f"SELECT {', '.join(select)} FROM records "  # nosec B608
             f"WHERE state = 'active' ORDER BY updated_seq DESC").fetchall()
         out = []
         for row in rows:
             rec = dict(zip(select, row))
-            for key in ("tags", "entities", "source_events"):
-                try:
-                    rec[key] = json.loads(rec.get(key) or "[]")
-                except Exception:  # noqa: BLE001
-                    rec[key] = []
-            # body is body_enc at rest (U-08a); ask the authority for plaintext
-            body = ""
+            # Protocol 3 encrypts all user-visible record metadata.  Raw SQL
+            # supplies only ordering/identity; projection plaintext must come
+            # from the authority boundary.
             try:
                 full = store.get_record(rec["id"])
                 if isinstance(full, dict):
                     full = full.get("record", full)
-                    body = str(full.get("body", "") or "")
+                    if isinstance(full, dict):
+                        rec = full
             except Exception:  # noqa: BLE001
-                body = ""
-            rec["body"] = body
+                continue
             out.append(rec)
         return out
     except sqlite3.Error:
@@ -257,8 +254,9 @@ def _recent_events(store, limit: int = 50) -> list:
             return []
         select = [c for c in ("id", "seq", "ts", "actor", "type", "scope",
                               "sensitivity", "taint") if c in cols]
-        rows = conn.execute(
-            f"SELECT {', '.join(select)} FROM events "
+        # ``select`` is selected exclusively from the fixed tuple above.
+        rows = conn.execute(  # nosec B608
+            f"SELECT {', '.join(select)} FROM events "  # nosec B608
             f"ORDER BY seq DESC LIMIT ?", (limit,)).fetchall()
         return [dict(zip(select, row)) for row in rows]
     except sqlite3.Error:

@@ -59,8 +59,8 @@ except Exception:  # noqa: BLE001
     except Exception:  # noqa: BLE001
         _export_import = None
 
-VERSION = "2.0"
-SERVER_VERSION = "lamf/2.0.0"
+VERSION = "3.0"
+SERVER_VERSION = "lamf/3.0.0"
 DEFAULT_PORT = 8734
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
 MAX_BODY = 64 * 1024            # generic single-request bound (wire-protocol §7)
@@ -81,6 +81,7 @@ _ERROR_HTTP = {
     "invalid_input": 400,
     "unavailable": 503,
     "too_large": 413,
+    "rate_limited": 429,
 }
 
 
@@ -695,21 +696,12 @@ def build_capsule(ctx, purpose: str, max_tokens: int, scopes=None,
 def orientation(ctx, max_tokens: int = 1200, session=None) -> dict:
     policy = getattr(ctx, "policy", None)
     store = getattr(ctx, "store", None)
+    budget = max(200, min(4000, capsule_max_tokens(policy),
+                          int(max_tokens or 1200)))
     sections = {"identity": [], "preferences": [], "open_tasks": [],
                 "open_handoffs": [], "recent_decisions": []}
-    queries = {"identity": "identity", "preferences": "prefer",
-               "open_tasks": "task", "recent_decisions": "decision"}
-    if store is not None:
-        for key, q in queries.items():
-            try:
-                for r in search(ctx, q, limit=5,
-                                filters={"sensitivity_max": "ordinary"})["results"]:
-                    if r["state"] in ("active", "draft"):
-                        sections[key].append(r)
-            except ApiError:
-                break
     head_seq, _ = spine_head(getattr(ctx, "spine", None))
-    return {
+    result = {
         "capsule_id": new_id("cap"),
         "envelope": {
             "untrusted_data_notice":
@@ -720,9 +712,50 @@ def orientation(ctx, max_tokens: int = 1200, session=None) -> dict:
                         "scope_set": [], "record_watermark": head_seq},
         "sections": sections,
         "session": session,
-        "effective_max_tokens": min(4000, capsule_max_tokens(policy),
-                                    int(max_tokens or 1200)),
+        "effective_max_tokens": budget,
+        "omissions": [],
     }
+
+    def upper_bound_tokens(value) -> int:
+        # Three UTF-8 bytes per token is deliberately more conservative than
+        # the common four-character heuristic while remaining useful for
+        # provider-neutral capsules.
+        size = len(json.dumps(value, ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8"))
+        return (size + 2) // 3
+
+    omitted = 0
+    queries = {"identity": "identity", "preferences": "prefer",
+                "open_tasks": "task", "recent_decisions": "decision"}
+    if store is not None:
+        seen = set()
+        for key, q in queries.items():
+            try:
+                for r in search(ctx, q, limit=5,
+                                 filters={"sensitivity_max": "ordinary"})["results"]:
+                    rid = r.get("record_id")
+                    if r["state"] not in ("active", "draft") or rid in seen:
+                        continue
+                    candidate = dict(r)
+                    sections[key].append(candidate)
+                    if upper_bound_tokens(result) > budget:
+                        sections[key].pop()
+                        omitted += 1
+                    else:
+                        seen.add(rid)
+            except ApiError:
+                break
+    if omitted:
+        result["omissions"].append({"reason": "token_budget",
+                                    "count": omitted})
+        # The omission receipt itself consumes budget.  Remove least important
+        # records until the complete serialized response is bounded.
+        for key in ("recent_decisions", "open_tasks", "preferences", "identity"):
+            while sections[key] and upper_bound_tokens(result) > budget:
+                sections[key].pop()
+                result["omissions"][0]["count"] += 1
+    result["token_count_estimate"] = upper_bound_tokens(result)
+    return result
 
 
 def _stats_int(stats: dict, *keys) -> int:
@@ -802,7 +835,7 @@ class _StoreWorker(threading.Thread):
     def __init__(self, ctx):
         super().__init__(daemon=True, name="lamf-api-store")
         self._ctx = ctx
-        self._q: "_queue.Queue" = _queue.Queue()
+        self._q: "_queue.Queue" = _queue.Queue(maxsize=256)
         self.store = None
         self.spine = getattr(ctx, "spine", None)
         self.ready = threading.Event()
@@ -855,8 +888,12 @@ class _StoreWorker(threading.Thread):
 
     def call(self, fn, *args, **kwargs):
         box = {"event": threading.Event()}
-        self._q.put((fn, args, kwargs, box))
-        box["event"].wait()
+        try:
+            self._q.put((fn, args, kwargs, box), timeout=2)
+        except _queue.Full as exc:
+            raise RuntimeError("store worker queue saturated") from exc
+        if not box["event"].wait(timeout=30):
+            raise RuntimeError("store worker operation timed out")
         if "error" in box:
             raise box["error"]
         return box.get("result")
@@ -991,6 +1028,10 @@ class _Handler(BaseHTTPRequestHandler):
         return True
 
     def _check_auth(self) -> bool:
+        client = self.client_address[0] if self.client_address else "local"
+        if not self.server.auth_limiter.allowed(client):  # type: ignore[attr-defined]
+            self._error("rate_limited", "authentication rate limit exceeded", 429)
+            return False
         token = load_operator_token(ctx_data_dir(self.ctx))
         presented = self.headers.get("Authorization") or ""
         presented = presented[7:] if presented.startswith("Bearer ") else ""
@@ -999,7 +1040,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response_only  # noqa: keep linter quiet
             self._error("unauthenticated", "missing or invalid bearer token",
                         401)
+            self.server.auth_limiter.failed(client)  # type: ignore[attr-defined]
             return False
+        self.server.auth_limiter.succeeded(client)  # type: ignore[attr-defined]
         return True
 
     def _guard(self) -> bool:
@@ -1105,6 +1148,10 @@ class _Handler(BaseHTTPRequestHandler):
                 body = self._read_body(MAX_BODY)
                 from . import mcp_server
                 return self._send_json(200, mcp_server.handoff(self.ctx, body))
+            if path == "/v1/activities":
+                body = self._read_body(MAX_BODY)
+                from . import mcp_server
+                return self._send_json(200, mcp_server.activity(self.ctx, body))
             m = re.fullmatch(r"/v1/approvals/([^/]+)", path)
             if m:
                 body = self._read_body(MAX_BODY)
@@ -1231,6 +1278,35 @@ class LamfHttpServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    class AuthLimiter:
+        def __init__(self, limit=60, window=60.0, block=30.0):
+            self.limit, self.window, self.block = limit, window, block
+            self.lock = threading.Lock()
+            self.state = {}
+
+        def allowed(self, client):
+            now = time.monotonic()
+            with self.lock:
+                failures, blocked_until = self.state.get(client, ([], 0.0))
+                if blocked_until > now:
+                    return False
+                failures = [t for t in failures if now - t < self.window]
+                self.state[client] = (failures, 0.0)
+                return len(failures) < self.limit
+
+        def failed(self, client):
+            now = time.monotonic()
+            with self.lock:
+                failures, _ = self.state.get(client, ([], 0.0))
+                failures = [t for t in failures if now - t < self.window]
+                failures.append(now)
+                blocked = now + self.block if len(failures) >= self.limit else 0.0
+                self.state[client] = (failures, blocked)
+
+        def succeeded(self, client):
+            with self.lock:
+                self.state.pop(client, None)
+
     def server_close(self):
         worker = getattr(self, "lamf_worker", None)
         if worker is not None:
@@ -1244,6 +1320,7 @@ def make_server(ctx, port: int = None, host: str = "127.0.0.1") -> LamfHttpServe
     if port is None:
         port = int(os.environ.get("LAMF_PORT") or DEFAULT_PORT)
     srv = LamfHttpServer((host, int(port)), _Handler)
+    srv.auth_limiter = LamfHttpServer.AuthLimiter()  # type: ignore[attr-defined]
     safe_ctx, worker = _threadsafe_ctx(ctx)
     srv.lamf_ctx = safe_ctx  # type: ignore[attr-defined]
     srv.lamf_worker = worker  # type: ignore[attr-defined]

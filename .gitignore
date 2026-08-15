@@ -19,6 +19,8 @@ logs/
 # Local environments and caches
 .venv/
 venv/
+.venv-copied-untrusted/
+.artifacts/
 __pycache__/
 *.py[cod]
 node_modules/

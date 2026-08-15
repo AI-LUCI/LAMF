@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minimal Solution"
+  short_description: "Prefer the smallest safe solution"
+  default_prompt: "Use the smallest safe solution that satisfies the request."

@@ -2,17 +2,12 @@
 
 This guide installs LAMF from a clean source checkout while keeping the running authority and its private data outside Git.
 
-## Windows: the optional one-click installer beta (`LAMF-beta.exe`)
+## Windows: the one-click installer (`LAMF.exe`)
 
-If you have `LAMF-beta.exe`, double-click it and skip the rest of this guide. It is a
+If you have `LAMF.exe`, double-click it and skip the rest of this guide. It is a
 single windowed executable — no console, no unpacking, nothing to install first
 except Python 3.10+ (the installer detects it and shows you the one command that
 installs it if it is missing).
-
-This path is **beta** and the executable is not code-signed. Windows SmartScreen
-or enterprise policy may warn or block it. The PowerShell installer below remains
-the stable installation method. Verify the beta download with the companion
-`dist/LAMF-beta.exe.sha256` file; checksums verify bytes, not publisher identity.
 
 The window asks for four things, then does the work and shows the live output:
 

@@ -4,7 +4,7 @@ JSON-RPC 2.0 over stdio, no SDK dependency. Implements ``initialize``
 (protocolVersion "2025-03-26", serverInfo lamf/2.0.0), ``notifications/
 initialized`` (no reply), ``tools/list``, ``tools/call`` and ``ping``.
 
-Exposes the nine §D tools with the exact names from
+Exposes the §D tools with the exact names from
 03_CONTRACTS/mcp-tools.yaml. Tool results are MCP text content blocks whose
 text is a JSON payload. ``ctx`` is the same duck-typed context as api.py.
 
@@ -34,7 +34,7 @@ except Exception:  # noqa: BLE001
         _api = None
 
 PROTOCOL_VERSION = "2025-03-26"
-SERVER_INFO = {"name": "lamf", "version": "2.0.0"}
+SERVER_INFO = {"name": "lamf", "version": "3.0.0"}
 SERVER_INSTRUCTIONS = (
     "LAMF is the user's durable memory across chats, tasks, projects, and local "
     "Codex clients. At the beginning of every new task or chat--including "
@@ -59,11 +59,13 @@ def server_instructions(ctx) -> str:
     except Exception:  # optimization faults must never affect memory service
         return SERVER_INSTRUCTIONS
 LEASE_MS = 30 * 60 * 1000  # §J: 30-minute handoff lease
+ACTIVITY_WAIT_MS = 30 * 60 * 1000
+ACTIVITY_HEARTBEAT_MS = 10 * 60 * 1000
 
-# The nine §D tools — exact names, no synonyms.
+# The §D tools — exact names, no synonyms.
 TOOLS = [
     {"name": "memory_search",
-     "description": "FTS/graph/vector search over memory records, "
+     "description": "Keyed blind-index search over encrypted memory records, "
                     "scope-filtered. Results carry taint labels (floor F5); "
                     "tombstoned records are never returned.",
      "inputSchema": {"type": "object", "required": ["query"],
@@ -152,6 +154,30 @@ TOOLS = [
                          "recipient": {"type": "string"},
                          "message": {"type": "string"},
                          "fencing_token": {"type": "integer"}}}},
+    {"name": "memory_activity",
+     "description": "Ephemeral cross-agent work awareness. Register current "
+                    "intent, detect overlapping work, mark user waits, resume, "
+                    "complete, or explicitly transfer work. Activity cards are "
+                    "not durable memory and never enter Obsidian projections.",
+     "inputSchema": {"type": "object", "required": ["action"],
+                     "properties": {
+                         "action": {"type": "string", "enum": [
+                             "register", "update", "list", "check_overlap",
+                             "wait", "resume", "complete", "transfer"]},
+                         "activity_id": {"type": "string"},
+                         "recipient_activity_id": {"type": "string"},
+                         "objective": {"type": "string", "maxLength": 2048},
+                         "project": {"type": "string", "maxLength": 256},
+                         "workspace": {"type": "string", "maxLength": 1024},
+                         "status_reason": {"type": "string", "maxLength": 2048},
+                         "requested_input": {"type": "string", "maxLength": 2048},
+                         "progress": {"type": "object"},
+                         "concepts": {"type": "array", "items": {"type": "string"},
+                                      "maxItems": 64},
+                         "artifacts": {"type": "array", "items": {"type": "string"},
+                                       "maxItems": 64},
+                         "include_history": {"type": "boolean", "default": False},
+                         "user_approved": {"type": "boolean", "default": False}}}},
     {"name": "memory_status",
      "description": "Instance health and integrity head: counts, checkpoint, "
                     "spool depth, pending approvals.",
@@ -286,6 +312,10 @@ def _coordination(ctx) -> _JsonCollection:
     return _JsonCollection(_data_dir(ctx) / "coordination.json")
 
 
+def _activities(ctx) -> _JsonCollection:
+    return _JsonCollection(_data_dir(ctx) / "activities.json")
+
+
 def _participant(ctx) -> str:
     return str(getattr(ctx, "coordination_id", None) or _actor(ctx))
 
@@ -364,6 +394,260 @@ def coordinate(ctx, args: dict) -> dict:
             return {"agent_id": me, "active_agents": active,
                     "messages": inbox}
     raise ToolError("invalid_input", f"unknown coordination action {action!r}")
+
+
+# ---------------------------------------------------------------------------
+# Activity cards — ephemeral cross-agent duplicate-work awareness
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_VISIBLE = {"active", "waiting_for_user", "paused_waiting_for_user",
+                     "inactive_disconnected", "handoff_pending"}
+_ACTIVITY_STOP_WORDS = {
+    "a", "an", "and", "as", "at", "be", "build", "by", "create", "for",
+    "from", "in", "into", "of", "on", "or", "platform", "project", "the",
+    "this", "to", "with",
+}
+
+
+def _activity_text(ctx, value, limit=2048) -> str:
+    text = str(value or "").strip()[:limit]
+    if not text:
+        return ""
+    try:
+        from .sanitize import sanitize, SecretBlocked
+        return sanitize(text, getattr(ctx, "policy", None), "ordinary").text
+    except SecretBlocked as exc:
+        raise ToolError("policy_denied",
+                        f"activity text refused by sanitizer ({exc.category})") from exc
+
+
+def _activity_list(ctx, values, limit=64) -> list:
+    return sorted({_activity_text(ctx, item, 1024) for item in (values or [])[:limit]
+                   if str(item or "").strip()})
+
+
+def _activity_progress(ctx, value) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ToolError("invalid_input", "progress must be an object")
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > 8192:
+        raise ToolError("invalid_input", "progress exceeds 8192 bytes")
+    _activity_text(ctx, encoded, 8192)  # secret scan; keep the original shape
+    return value
+
+
+def _activity_tokens(card: dict) -> set:
+    raw = " ".join([str(card.get("objective") or ""),
+                    str(card.get("project") or ""),
+                    *[str(x) for x in card.get("concepts") or []],
+                    *[str(x) for x in card.get("artifacts") or []]])
+    return {token for token in __import__("re").findall(r"[a-z0-9]+", raw.casefold())
+            if len(token) > 1 and token not in _ACTIVITY_STOP_WORDS}
+
+
+def _activity_overlap(left: dict, right: dict) -> tuple:
+    left_artifacts = {str(x).replace("\\", "/").casefold()
+                      for x in left.get("artifacts") or []}
+    right_artifacts = {str(x).replace("\\", "/").casefold()
+                       for x in right.get("artifacts") or []}
+    shared_artifacts = sorted(left_artifacts & right_artifacts)
+    lt, rt = _activity_tokens(left), _activity_tokens(right)
+    shared = sorted(lt & rt)
+    union = lt | rt
+    lexical = len(shared) / len(union) if union else 0.0
+    evidence = min(1.0, len(shared) / 4.0)
+    project_bonus = 0.15 if (left.get("project") and
+        str(left.get("project")).casefold() == str(right.get("project")).casefold()) else 0.0
+    score = 1.0 if shared_artifacts else min(1.0, max(lexical, evidence) + project_bonus)
+    level = "high" if score >= 0.55 else "medium" if score >= 0.25 else "low"
+    return score, level, shared, shared_artifacts
+
+
+def _age_activity_cards(ctx, cards: list, now: int) -> None:
+    coordination = _coordination(ctx).load() or {}
+    agents = coordination.get("agents", {}) if isinstance(coordination, dict) else {}
+    for card in cards:
+        if (card.get("status") == "waiting_for_user" and
+                now - int(card.get("waiting_since") or now) >= ACTIVITY_WAIT_MS):
+            card["status"] = "paused_waiting_for_user"
+            card["paused_at"] = int(card.get("waiting_since") or now) + ACTIVITY_WAIT_MS
+            card["updated_at"] = now
+        if card.get("status") == "active":
+            agent = agents.get(card.get("agent_id"), {})
+            last_seen = int(agent.get("last_seen") or card.get("heartbeat_at") or now)
+            if now - last_seen > ACTIVITY_HEARTBEAT_MS:
+                card["status"] = "inactive_disconnected"
+                card["status_reason"] = "Agent heartbeat is stale."
+                card["updated_at"] = now
+
+
+def _overlap_results(cards: list, candidate: dict, me: str,
+                     exclude_id=None) -> list:
+    matches = []
+    for card in cards:
+        if card.get("activity_id") == exclude_id or card.get("agent_id") == me:
+            continue
+        if card.get("status") not in _ACTIVITY_VISIBLE:
+            continue
+        score, level, shared, artifacts = _activity_overlap(candidate, card)
+        if level == "low":
+            continue
+        matches.append({"activity_id": card.get("activity_id"),
+                        "agent_id": card.get("agent_id"),
+                        "objective": card.get("objective"),
+                        "project": card.get("project"),
+                        "workspace": card.get("workspace"),
+                        "status": card.get("status"),
+                        "requested_input": card.get("requested_input"),
+                        "progress": card.get("progress") or {},
+                        "similarity": round(score, 4), "overlap": level,
+                        "shared_concepts": shared,
+                        "shared_artifacts": artifacts})
+    return sorted(matches, key=lambda x: (-x["similarity"], x["activity_id"] or ""))
+
+
+def activity(ctx, args: dict) -> dict:
+    """Maintain visible, expiring operational intent without durable promotion."""
+    action = args.get("action")
+    register_presence(ctx)
+    me, now = _participant(ctx), _now_ms()
+    store = _activities(ctx)
+    with store.locked():
+        cards = store.load()
+        if not isinstance(cards, list):
+            cards = []
+        _age_activity_cards(ctx, cards, now)
+
+        def find(activity_id):
+            return next((x for x in cards if x.get("activity_id") == activity_id), None)
+
+        if action == "list":
+            visible = cards if args.get("include_history") else [
+                x for x in cards if x.get("status") in _ACTIVITY_VISIBLE]
+            store.save(cards)
+            return {"agent_id": me, "activities": visible}
+
+        if action == "check_overlap":
+            objective = _activity_text(ctx, args.get("objective"))
+            if not objective:
+                raise ToolError("invalid_input", "objective is required")
+            candidate = {"objective": objective,
+                         "project": _activity_text(ctx, args.get("project"), 256),
+                         "concepts": _activity_list(ctx, args.get("concepts")),
+                         "artifacts": _activity_list(ctx, args.get("artifacts"))}
+            matches = _overlap_results(cards, candidate, me, args.get("activity_id"))
+            store.save(cards)
+            return _activity_overlap_response(matches)
+
+        if action == "register":
+            objective = _activity_text(ctx, args.get("objective"))
+            if not objective:
+                raise ToolError("invalid_input", "objective is required")
+            existing = next((x for x in cards if x.get("agent_id") == me
+                and x.get("status") in _ACTIVITY_VISIBLE
+                and str(x.get("objective") or "").casefold() == objective.casefold()), None)
+            if existing:
+                existing.update({"project": _activity_text(ctx, args.get("project"), 256),
+                                 "workspace": _activity_text(ctx, args.get("workspace"), 1024),
+                                 "concepts": _activity_list(ctx, args.get("concepts")),
+                                 "artifacts": _activity_list(ctx, args.get("artifacts")),
+                                 "progress": _activity_progress(ctx, args.get("progress")),
+                                 "status": "active", "requested_input": "",
+                                 "waiting_since": None, "paused_at": None,
+                                 "heartbeat_at": now, "updated_at": now})
+                matches = _overlap_results(cards, existing, me, existing["activity_id"])
+                store.save(cards)
+                return {"activity": existing, **_activity_overlap_response(matches)}
+            card = {"activity_id": _new_id("act"), "agent_id": me,
+                    "objective": objective,
+                    "project": _activity_text(ctx, args.get("project"), 256),
+                    "workspace": _activity_text(ctx, args.get("workspace"), 1024),
+                    "concepts": _activity_list(ctx, args.get("concepts")),
+                    "artifacts": _activity_list(ctx, args.get("artifacts")),
+                    "progress": _activity_progress(ctx, args.get("progress")),
+                    "status": "active",
+                    "status_reason": "", "requested_input": "",
+                    "waiting_since": None, "paused_at": None,
+                    "heartbeat_at": now, "created_at": now, "updated_at": now}
+            matches = _overlap_results(cards, card, me)
+            cards.append(card)
+            store.save(cards)
+            return {"activity": card, **_activity_overlap_response(matches)}
+
+        card = find(args.get("activity_id"))
+        if card is None:
+            raise ToolError("not_found", f"activity {args.get('activity_id')} not found")
+        if card.get("agent_id") != me and action != "transfer":
+            raise ToolError("conflict", "only the owning agent may change this activity")
+
+        if action in ("update", "resume"):
+            for key, limit in (("objective", 2048), ("project", 256),
+                               ("workspace", 1024), ("status_reason", 2048)):
+                if key in args:
+                    card[key] = _activity_text(ctx, args.get(key), limit)
+            for key in ("concepts", "artifacts"):
+                if key in args:
+                    card[key] = _activity_list(ctx, args.get(key))
+            if "progress" in args:
+                card["progress"] = _activity_progress(ctx, args.get("progress"))
+            card.update({"status": "active", "requested_input": "",
+                         "waiting_since": None, "paused_at": None,
+                         "heartbeat_at": now, "updated_at": now})
+        elif action == "wait":
+            requested = _activity_text(ctx, args.get("requested_input"))
+            if not requested:
+                raise ToolError("invalid_input", "requested_input is required")
+            card.update({"status": "waiting_for_user", "requested_input": requested,
+                         "status_reason": _activity_text(ctx, args.get("status_reason")),
+                         "waiting_since": now, "paused_at": None,
+                         "heartbeat_at": now, "updated_at": now})
+        elif action == "complete":
+            card.update({"status": "completed",
+                         "status_reason": _activity_text(ctx, args.get("status_reason")),
+                         "completed_at": now, "updated_at": now})
+        elif action == "transfer":
+            if not args.get("user_approved"):
+                raise ToolError("approval_required", "explicit user approval is required")
+            recipient = find(args.get("recipient_activity_id"))
+            if recipient is None:
+                raise ToolError("not_found", "recipient activity not found")
+            card.update({"status": "transferred", "transferred_to": recipient["activity_id"],
+                         "transferred_at": now, "updated_at": now})
+            recipient.update({"status": "active", "transferred_from": card["activity_id"],
+                              "handoff_context": {
+                                  "objective": card.get("objective"),
+                                  "workspace": card.get("workspace"),
+                                  "concepts": card.get("concepts") or [],
+                                  "artifacts": card.get("artifacts") or [],
+                                  "progress": card.get("progress") or {},
+                                  "requested_input": card.get("requested_input"),
+                                  "status_reason": card.get("status_reason")},
+                              "heartbeat_at": now, "updated_at": now})
+        else:
+            raise ToolError("invalid_input", f"unknown activity action {action!r}")
+        store.save(cards)
+        return {"activity": card,
+                **({"recipient_activity": recipient} if action == "transfer" else {})}
+
+
+def _activity_overlap_response(matches: list) -> dict:
+    highest = matches[0]["overlap"] if matches else "none"
+    out = {"overlap": highest, "matches": matches,
+           "recommended_action": ("pause_and_reconcile" if highest == "high"
+                                  else "coordinate" if highest == "medium"
+                                  else "continue")}
+    if matches:
+        match = matches[0]
+        if match.get("status") in ("paused_waiting_for_user", "inactive_disconnected"):
+            out["user_notice"] = ("LAMF shows another agent already working on similar "
+                "work, but that activity is paused or inactive. Should they hand it off "
+                "to me, should we work together, or will you return and finish with them?")
+        else:
+            out["user_notice"] = ("LAMF shows another active agent working on similar "
+                "work. I should coordinate or wait before duplicating it.")
+    return out
 
 
 def _audit(ctx, type_, payload, scope="system", sensitivity="ordinary"):
@@ -610,6 +894,11 @@ def call_tool(ctx, name: str, args: dict):
             raise ToolError("invalid_input", "action is required")
         return handoff(ctx, args)
 
+    if name == "memory_activity":
+        if not args.get("action"):
+            raise ToolError("invalid_input", "action is required")
+        return activity(ctx, args)
+
     if name == "memory_status":
         return _api.status(ctx)
 
@@ -714,7 +1003,15 @@ def handle_request(ctx, req: dict):
     params = req.get("params") or {}
 
     if method == "initialize":
-        register_presence(ctx, params.get("clientInfo") or {})
+        # Initialization must remain a read-only, fail-open negotiation path.
+        # Some MCP hosts launch stdio servers in a filesystem sandbox that can
+        # read the memory authority but cannot update coordination sidecars.
+        # Presence is advisory and is refreshed by coordination/activity calls;
+        # it must never prevent tools/list or memory retrieval from starting.
+        try:
+            register_presence(ctx, params.get("clientInfo") or {})
+        except (OSError, PermissionError):
+            pass
         return _result(req_id, {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": False}},
@@ -748,6 +1045,13 @@ def serve_stdio(ctx, stdin=None, stdout=None) -> None:
     """Blocking stdio entry point (W-02: ``mcp serve_stdio(ctx)``)."""
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
+    # MCP stdio is UTF-8 regardless of the Windows console code page. Without
+    # this, redirected stdout may encode punctuation using cp1252; strict MCP
+    # clients then discard tools/list as malformed and report a startup timeout.
+    for stream in (stdin, stdout):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
     for line in stdin:
         line = line.strip()
         if not line:
