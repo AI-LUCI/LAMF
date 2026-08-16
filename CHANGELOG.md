@@ -6,6 +6,16 @@ All notable changes to the LAMF package are documented here. Format follows
 
 ## [Unreleased]
 
+## [3.0.1] — 2026-08-16
+
+- Fixed clean Codex installation by using one consistent `lamf-memory` MCP name.
+- Anchored Codex startup to the permanent runtime directory and marked LAMF enabled and required.
+- Installed profile-level LAMF startup guidance and the `lamf-memory` skill without replacing unrelated user guidance.
+- Added a live MCP initialize/tools-list activation gate to the installer.
+- Added regression tests for Codex config merging, startup guidance, and clean activation.
+- Updated clean-install and checksum instructions for the 3.0.1 release archive.
+- Preserved optional optimization state; this installer does not silently enable optimization modules.
+
 ### Added
 
 - Claude Desktop MCPB adapter with cross-platform existing-install discovery,

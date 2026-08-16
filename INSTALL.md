@@ -2,33 +2,25 @@
 
 This guide installs LAMF from a clean source checkout while keeping the running authority and its private data outside Git.
 
-## Windows: the one-click installer (`LAMF.exe`)
+## Windows: recommended source installer
 
-If you have `LAMF.exe`, double-click it and skip the rest of this guide. It is a
-single windowed executable — no console, no unpacking, nothing to install first
-except Python 3.10+ (the installer detects it and shows you the one command that
-installs it if it is missing).
+For LAMF 3.0.1, use the checksum-verified source archive from GitHub Releases or
+clone the `v3.0.1` tag. The previously published `LAMF-beta.exe` is an unsigned
+preview and is not the supported 3.0.1 installation path.
 
-The window asks for four things, then does the work and shows the live output:
+From a clean checkout in PowerShell, this non-interactive command installs LAMF
+for Codex without enabling optional integrations or changing optimization state:
 
-- **Your memories** — the permanent data folder holding the database, instance
-  key and operator token. It must sit outside any Git checkout; the installer
-  refuses otherwise, exactly like the command-line path.
-- **Program files** — where LAMF itself lives permanently. Launchers and agent
-  configs point here, so it must be a folder that stays put. It must be separate
-  from the data folder, so upgrading can never touch your memories.
-- **Security profile** — the same four fixed profiles described in §3.
-- **Your agents** — every supported harness as an independent checkbox; pick any
-  number, all of them, or none.
+```powershell
+python .\installer\install.py --data-dir "$env:USERPROFILE\LAMF" --profile controlled --harness codex --obsidian none --git none
+```
 
-The EXE carries the whole package as a payload and **stages it to the program
-files folder before running the installer**, so no launcher and no harness
-registration ever points into PyInstaller's temporary unpack directory. The
-installer verifies this afterwards and fails loudly if a generated file still
-references a temp path. Building the EXE is documented in
-[docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md).
+Selecting Codex installs profile startup guidance and the `lamf-memory` skill,
+writes a required MCP registration with a permanent working directory, and
+performs a live initialize/tools-list handshake. Fully quit and reopen Codex
+Desktop after setup, then start a new task.
 
-Everything below is the command-line path, which the GUI simply drives.
+The remaining sections explain each command-line choice and verification gate.
 
 ## 1. Prerequisites
 
@@ -117,9 +109,9 @@ The local web workspace is served at `http://127.0.0.1:8734` when the service is
 
 Release archives are published with a companion `SHA256SUMS.txt`. Comparing hashes confirms the ZIP you downloaded matches the published bytes (integrity / accidental corruption). It does **not** prove publisher authenticity the way code signing or a signature over the checksum file would; treat checksum verification and code signing as separate controls.
 
-Published core assets for `v2.0.0` use these names (adjust the version when a newer release is current):
+Published core assets for `v3.0.1` use these names:
 
-- `LAMF-2.0.0.zip`
+- `LAMF-3.0.1.zip`
 - `SHA256SUMS.txt`
 
 Optional optimizations are listed in the same sums file as `LAMF-Optimizations-1.0.0.zip` and ship from the separate [LAMF-Optimizations](https://github.com/AI-LUCI/LAMF-Optimizations) repository.
@@ -129,20 +121,20 @@ Download both the ZIP and `SHA256SUMS.txt` from the [GitHub Releases](https://gi
 ### PowerShell
 
 ```powershell
-# In the directory that contains LAMF-2.0.0.zip and SHA256SUMS.txt
-Get-FileHash .\LAMF-2.0.0.zip -Algorithm SHA256
+# In the directory that contains LAMF-3.0.1.zip and SHA256SUMS.txt
+Get-FileHash .\LAMF-3.0.1.zip -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
-Confirm the hex digest from `Get-FileHash` matches the line for `LAMF-2.0.0.zip` in `SHA256SUMS.txt` (comparison is case-insensitive). To automate the check:
+Confirm the hex digest from `Get-FileHash` matches the line for `LAMF-3.0.1.zip` in `SHA256SUMS.txt` (comparison is case-insensitive). To automate the check:
 
 ```powershell
 $expected = (Get-Content .\SHA256SUMS.txt |
-  Where-Object { $_ -match '\sLAMF-2\.0\.0\.zip$' } |
+  Where-Object { $_ -match '\sLAMF-3\.0\.1\.zip$' } |
   ForEach-Object { ($_ -split '\s+', 2)[0] }).ToLowerInvariant()
-$actual = (Get-FileHash .\LAMF-2.0.0.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -ne $expected) { throw "Checksum mismatch for LAMF-2.0.0.zip" }
-"OK: LAMF-2.0.0.zip matches SHA256SUMS.txt"
+$actual = (Get-FileHash .\LAMF-3.0.1.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Checksum mismatch for LAMF-3.0.1.zip" }
+"OK: LAMF-3.0.1.zip matches SHA256SUMS.txt"
 ```
 
 ### POSIX (macOS / Linux)
@@ -150,15 +142,15 @@ if ($actual -ne $expected) { throw "Checksum mismatch for LAMF-2.0.0.zip" }
 GNU `sha256sum` can check the sums file directly when the ZIP sits beside it:
 
 ```bash
-# In the directory that contains LAMF-2.0.0.zip and SHA256SUMS.txt
+# In the directory that contains LAMF-3.0.1.zip and SHA256SUMS.txt
 sha256sum -c --ignore-missing SHA256SUMS.txt
 ```
 
 `--ignore-missing` skips other names listed in the file (for example `LAMF-Optimizations-1.0.0.zip`) when those archives are not present. On macOS without GNU coreutils, compare manually with `shasum`:
 
 ```bash
-grep ' LAMF-2.0.0.zip$' SHA256SUMS.txt
-shasum -a 256 LAMF-2.0.0.zip
+grep ' LAMF-3.0.1.zip$' SHA256SUMS.txt
+shasum -a 256 LAMF-3.0.1.zip
 ```
 
 The two digests must match. A matching checksum only means the file contents match the published hash list; it is not a substitute for verifying a release signature or publisher identity.

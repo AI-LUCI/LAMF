@@ -107,7 +107,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "3.0.0"
+VERSION = "3.0.1"
 PLUGIN_ID = "lamf-memory"
 LAMF_URL = "http://127.0.0.1:8734"
 DEFAULT_DATA_DIR = "~/LAMF"
@@ -623,6 +623,9 @@ def apply_harness_registrations(ui: UI, data_dir: Path,
         target = h.default_config_path(hid)
         try:
             res = h.apply(hid, runtime_dir(), data_dir, target)
+            if hid == "codex":
+                install_codex_startup(ui)
+                verify_codex_activation(runtime_dir(), data_dir)
             results[hid] = "applied"
             ui.ok(f"{hid}: merged into {res['config']}"
                   + (f" (backup: {res['backup']})" if res.get("backup") else ""))
@@ -632,6 +635,74 @@ def apply_harness_registrations(ui: UI, data_dir: Path,
                     f"The portable snippet is in {data_dir / 'adapters'}; "
                     f"or run: lamf harness apply {hid}")
     return results
+
+
+def install_codex_startup(ui: UI, codex_home: Path | None = None) -> dict[str, Path]:
+    """Install account-independent Codex startup guidance and the LAMF skill."""
+    home = Path(codex_home or (Path.home() / ".codex"))
+    source = package_root() / "05_INTEGRATIONS" / "codex"
+    agents_source = (source / "AGENTS.md").read_text(encoding="utf-8").strip()
+    skill_source = source / "skill" / "SKILL.md"
+    begin, end = "<!-- BEGIN LAMF MANAGED -->", "<!-- END LAMF MANAGED -->"
+    agents = home / "AGENTS.md"
+    old = agents.read_text(encoding="utf-8") if agents.exists() else ""
+    if old.count(begin) != old.count(end) or old.count(begin) > 1:
+        raise ValueError(f"malformed LAMF managed guidance in {agents}")
+    block = f"{begin}\n{agents_source}\n{end}"
+    if begin in old:
+        prefix, rest = old.split(begin, 1)
+        _, suffix = rest.split(end, 1)
+        updated = prefix.rstrip() + ("\n\n" if prefix.strip() else "") + block + suffix
+    else:
+        updated = old.rstrip() + ("\n\n" if old.strip() else "") + block + "\n"
+    if agents.exists() and old != updated:
+        backup_file(ui, agents)
+    _atomic_text_write(agents, updated)
+    skill = home / "skills" / "lamf-memory" / "SKILL.md"
+    if skill.exists() and skill.read_bytes() != skill_source.read_bytes():
+        backup_file(ui, skill)
+    skill.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(skill_source, skill)
+    ui.ok(f"Codex startup guidance installed for this profile: {agents}")
+    return {"agents": agents, "skill": skill}
+
+
+def _atomic_text_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def verify_codex_activation(runtime: Path, data_dir: Path) -> None:
+    """Prove the installed MCP server starts and exposes the required tools."""
+    sys.path.insert(0, str(runtime))
+    from lamf.harness import server_spec
+    spec = server_spec(runtime, data_dir, "codex")
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-03-26", "capabilities": {},
+            "clientInfo": {"name": "lamf-installer-verifier", "version": VERSION}}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    ]
+    env = os.environ.copy()
+    env.update({str(k): str(v) for k, v in spec["env"].items()})
+    proc = subprocess.run(
+        [spec["command"], *spec["args"]],
+        input=("\n".join(json.dumps(item) for item in requests) + "\n").encode("utf-8"),
+        capture_output=True, env=env, cwd=spec["cwd"], timeout=30,
+    )
+    if proc.returncode != 0:
+        error = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Codex MCP startup failed: {error[:400]}")
+    output = proc.stdout.decode("utf-8", errors="replace")
+    replies = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+    tools = next((r for r in replies if r.get("id") == 2), {}).get("result", {}).get("tools", [])
+    names = {item.get("name") for item in tools}
+    required = {"memory_orientation", "memory_search", "memory_remember", "memory_status"}
+    if not required <= names:
+        raise RuntimeError(f"Codex MCP tool list incomplete: {sorted(names)}")
 
 
 def choose_harnesses(requested: list[str] | None, *, interactive: bool) -> tuple[str, ...]:

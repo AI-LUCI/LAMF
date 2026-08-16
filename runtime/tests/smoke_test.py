@@ -721,7 +721,7 @@ def s12(S):
         init = replies[1]["result"]
         check(init["protocolVersion"] == "2025-03-26",
               f"protocolVersion: {init}")
-        check(init["serverInfo"] == {"name": "lamf", "version": "3.0.0"},
+        check(init["serverInfo"] == {"name": "lamf", "version": "3.0.1"},
               f"serverInfo: {init}")
         instructions = init.get("instructions", "")
         check("beginning of every new task" in instructions

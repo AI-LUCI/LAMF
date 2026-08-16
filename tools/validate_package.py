@@ -54,7 +54,7 @@ TOP_FILES = {
 IGNORED_TREE_PREFIXES = (
     ".git/", ".agent-runs/", ".artifacts/", ".pytest_cache/", ".test-runs/",
     "build/", "comparative-benchmark/", "data/", "data-pre-v3-legacy-", "dist/",
-    "runtime/.venv/",
+    "pip/", "runtime/.venv/",
 )
 
 
@@ -467,7 +467,7 @@ def check_manifest(root: Path):
             fail(5, f"hash mismatch: {rel}")
     # Manifest paths are portable and always use forward slashes.  Path.__str__
     # uses backslashes on Windows, which made every valid entry look missing.
-    runtime_dirs = {"runtime/.venv", "data", ".test-runs", ".git",
+    runtime_dirs = {"runtime/.venv", "pip", "data", ".test-runs", ".git",
                     ".agent-runs", ".artifacts", ".pytest_cache", "build",
                     "comparative-benchmark", "dist"}
     on_disk = {
@@ -494,7 +494,7 @@ def check_manifest(root: Path):
 
 def write_manifest(root: Path):
     """Regenerate the portable package manifest after intentional edits."""
-    runtime_dirs = {"runtime/.venv", "data", ".test-runs", ".git",
+    runtime_dirs = {"runtime/.venv", "pip", "data", ".test-runs", ".git",
                     ".agent-runs", ".artifacts", ".pytest_cache", "build",
                     "comparative-benchmark", "dist"}
     paths = sorted(
