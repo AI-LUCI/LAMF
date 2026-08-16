@@ -34,7 +34,7 @@ except Exception:  # noqa: BLE001
         _api = None
 
 PROTOCOL_VERSION = "2025-03-26"
-SERVER_INFO = {"name": "lamf", "version": "3.0.0"}
+SERVER_INFO = {"name": "lamf", "version": "3.0.1"}
 SERVER_INSTRUCTIONS = (
     "LAMF is the user's durable memory across chats, tasks, projects, and local "
     "Codex clients. At the beginning of every new task or chat--including "

@@ -86,12 +86,18 @@ Useful commands afterwards: `~/LAMF/bin/start-lamf.sh` / `stop-lamf.sh`
 If anything fails, every error message prints its own fix command, and re-running
 the installer repairs almost everything.
 
-**Current release: LAMF 3.0.0.** Protocol 3 encrypts record metadata at rest,
+**Current release: LAMF 3.0.1.** Protocol 3 encrypts record metadata at rest,
 uses a keyed contentless FTS5 search index, enforces bounded context output,
 rate-limits authentication failures, bounds the store work queue, and verifies
 optional optimization instructions against a hash manifest. See
 [`docs/RELEASE_3_0.md`](docs/RELEASE_3_0.md) for security gates, migration notes,
 MemoryBench results, and the complete optimization matrix disclosure.
+
+For Codex Desktop, selecting the `codex` harness now installs a required
+`lamf-memory` MCP registration anchored to the permanent runtime directory,
+adds account-independent startup guidance and the LAMF skill, and performs a
+live MCP initialize/tools-list check before setup can pass. Fully quit and
+reopen Codex Desktop once after installation.
 
 ## The three layers
 

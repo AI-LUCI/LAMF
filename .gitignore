@@ -27,6 +27,7 @@ node_modules/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+pip/
 /05_INTEGRATIONS/optimizations/overlay/*.exe
 
 # Local validation artifacts

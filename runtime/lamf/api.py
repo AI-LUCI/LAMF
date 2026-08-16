@@ -60,7 +60,7 @@ except Exception:  # noqa: BLE001
         _export_import = None
 
 VERSION = "3.0"
-SERVER_VERSION = "lamf/3.0.0"
+SERVER_VERSION = "lamf/3.0.1"
 DEFAULT_PORT = 8734
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
 MAX_BODY = 64 * 1024            # generic single-request bound (wire-protocol §7)

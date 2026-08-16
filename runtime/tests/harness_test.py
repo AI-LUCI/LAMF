@@ -12,7 +12,7 @@ RUNTIME = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RUNTIME))
 
 from lamf.harness import (
-    HARNESS_IDS, HARNESSES, apply_generic_json, apply_grok, apply_hermes,
+    HARNESS_IDS, HARNESSES, apply_codex, apply_generic_json, apply_grok, apply_hermes,
     remove_generic_json, remove_grok, remove_hermes, render, server_spec,
     validate_all,
 )  # noqa: E402
@@ -67,6 +67,20 @@ def main() -> int:
         import shutil
         shutil.rmtree(root, ignore_errors=True)
     import yaml
+    with tempfile.TemporaryDirectory() as td:
+        config = Path(td) / "config.toml"
+        config.write_text('model = "codex-test"\n', encoding="utf-8")
+        apply_codex(config, RUNTIME, data)
+        apply_codex(config, RUNTIME, data)
+        text = config.read_text(encoding="utf-8")
+        assert "[mcp_servers.lamf-memory]" in text
+        assert f'cwd = "{str(RUNTIME).replace(chr(92), chr(92) * 2)}"' in text
+        assert "enabled = true" in text and "required = true" in text
+        assert 'default_tools_approval_mode = "prompt"' in text
+        assert "[mcp_servers.lamf-memory.tools.memory_orientation]" in text
+        assert "[mcp_servers.lamf]" not in text
+        assert text.count("# BEGIN LAMF MANAGED") == 1
+        print("PASS codex apply: required startup registration + cwd + approvals")
     with tempfile.TemporaryDirectory() as td:
         config = Path(td) / "config.yaml"
         config.write_text("model: test-model\nmcp_servers:\n  existing:\n    command: keep-me\n", encoding="utf-8")
